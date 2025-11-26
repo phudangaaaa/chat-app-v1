@@ -252,7 +252,9 @@ public class MainController {
             dialog.setTitle("Friend Requests");
             dialog.setHeaderText("You have " + requests.size() + " friend request(s)");
 
-            ListView<FriendRequest> listView = new ListView<>(FXCollections.observableArrayList(requests));
+            // Use ObservableList to allow dynamic updates
+            ObservableList<FriendRequest> requestsList = FXCollections.observableArrayList(requests);
+            ListView<FriendRequest> listView = new ListView<>(requestsList);
             listView.setCellFactory(param -> new ListCell<FriendRequest>() {
                 @Override
                 protected void updateItem(FriendRequest request, boolean empty) {
@@ -263,11 +265,19 @@ public class MainController {
                     } else {
                         setText(request.getSenderFullName() + " (@" + request.getSenderUsername() + ")");
 
-                        Button acceptBtn = new Button("Accept");
-                        acceptBtn.setOnAction(e -> handleFriendRequest(request.getRequestId(), true));
+                        Button acceptBtn = new Button("✓ Accept");
+                        acceptBtn.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white;");
+                        acceptBtn.setOnAction(e -> {
+                            handleFriendRequest(request.getRequestId(), true, requestsList, dialog);
+                            acceptBtn.setDisable(true);
+                        });
 
-                        Button rejectBtn = new Button("Reject");
-                        rejectBtn.setOnAction(e -> handleFriendRequest(request.getRequestId(), false));
+                        Button rejectBtn = new Button("✕ Reject");
+                        rejectBtn.setStyle("-fx-background-color: #f44336; -fx-text-fill: white;");
+                        rejectBtn.setOnAction(e -> {
+                            handleFriendRequest(request.getRequestId(), false, requestsList, dialog);
+                            rejectBtn.setDisable(true);
+                        });
 
                         setGraphic(new javafx.scene.layout.HBox(10, acceptBtn, rejectBtn));
                     }
@@ -280,16 +290,38 @@ public class MainController {
         });
     }
 
-    private void handleFriendRequest(int requestId, boolean accept) {
+    private void handleFriendRequest(int requestId, boolean accept, ObservableList<FriendRequest> requestsList, Dialog<ButtonType> dialog) {
         JsonObject data = new JsonObject();
         data.addProperty("requestId", requestId);
 
         String action = accept ? Protocol.ACTION_ACCEPT_FRIEND_REQUEST : Protocol.ACTION_REJECT_FRIEND_REQUEST;
 
         networkManager.sendRequest(action, data, response -> {
-            if (response.isSuccess() && accept) {
-                loadFriends(); // Reload friends list
-            }
+            Platform.runLater(() -> {
+                if (response.isSuccess()) {
+                    // Show success message
+                    String message = accept ? "Friend request accepted!" : "Friend request rejected.";
+                    showAlert("Friend Request", message);
+
+                    // Remove request from list
+                    requestsList.removeIf(req -> req.getRequestId() == requestId);
+
+                    // Update dialog header
+                    dialog.setHeaderText("You have " + requestsList.size() + " friend request(s)");
+
+                    // Reload friends list if accepted
+                    if (accept) {
+                        loadFriends();
+                    }
+
+                    // Close dialog if no more requests
+                    if (requestsList.isEmpty()) {
+                        dialog.close();
+                    }
+                } else {
+                    showAlert("Error", response.getMessage());
+                }
+            });
         });
     }
 

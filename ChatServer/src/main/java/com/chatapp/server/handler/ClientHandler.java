@@ -255,6 +255,8 @@ public class ClientHandler implements Runnable {
         if (currentUser == null) return;
 
         int receiverId = data.get("receiverId").getAsInt();
+        logger.info("User {} sending friend request to user {}", currentUser.getUserId(), receiverId);
+
         FriendRequest request = friendService.sendFriendRequest(currentUser.getUserId(), receiverId);
 
         if (request != null) {
@@ -264,21 +266,33 @@ public class ClientHandler implements Runnable {
 
             // Notify receiver
             notifyUser(receiverId, Protocol.NOTIFY_FRIEND_REQUEST, request);
+            logger.info("Friend request {} created and notification sent", request.getRequestId());
         } else {
-            sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FRIEND_REQUEST, false, "Failed to send request"));
+            logger.warn("Failed to send friend request from {} to {}", currentUser.getUserId(), receiverId);
+            sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FRIEND_REQUEST, false, "Failed to send request. User may already be a friend or have a pending request."));
         }
     }
 
     private void handleAcceptFriendRequest(JsonObject data) {
         int requestId = data.get("requestId").getAsInt();
+        logger.info("User {} accepting friend request {}", currentUser != null ? currentUser.getUserId() : "null", requestId);
+
         boolean success = friendService.acceptFriendRequest(requestId);
 
+        if (success) {
+            logger.info("Friend request {} accepted successfully", requestId);
+        } else {
+            logger.warn("Failed to accept friend request {}", requestId);
+        }
+
         sendResponse(Protocol.createResponse(Protocol.ACTION_ACCEPT_FRIEND_REQUEST, success,
-                success ? "Friend request accepted" : "Failed to accept"));
+                success ? "Friend request accepted" : "Failed to accept request"));
     }
 
     private void handleRejectFriendRequest(JsonObject data) {
         int requestId = data.get("requestId").getAsInt();
+        logger.info("User {} rejecting friend request {}", currentUser != null ? currentUser.getUserId() : "null", requestId);
+
         boolean success = friendService.rejectFriendRequest(requestId);
 
         sendResponse(Protocol.createResponse(Protocol.ACTION_REJECT_FRIEND_REQUEST, success,

@@ -1,5 +1,130 @@
 # Troubleshooting Guide - Hướng dẫn xử lý lỗi
 
+## 👥 Lỗi kết bạn (Friend Request Issues)
+
+### Các vấn đề phổ biến:
+1. Không gửi được friend request
+2. Accept/Reject không hoạt động
+3. Sau khi accept, không thấy bạn trong friend list
+4. Request vẫn hiển thị sau khi đã accept/reject
+
+### Nguyên nhân & Fix:
+
+#### 1. Không gửi được friend request
+
+**Nguyên nhân:**
+- Đã là bạn bè rồi
+- Đã có pending request (từ bạn hoặc người kia gửi)
+- User không tồn tại
+
+**Kiểm tra:**
+```sql
+-- Check xem đã là friends chưa
+SELECT * FROM friends WHERE
+  (user_id = 1 AND friend_id = 2) OR
+  (user_id = 2 AND friend_id = 1);
+
+-- Check pending requests
+SELECT * FROM friend_requests WHERE
+  ((sender_id = 1 AND receiver_id = 2) OR
+   (sender_id = 2 AND receiver_id = 1))
+  AND request_status = 'PENDING';
+```
+
+**Server logs sẽ hiển thị:**
+```
+User 1 sending friend request to user 2
+Failed to send friend request from 1 to 2
+```
+
+**Fix:**
+- Nếu error message là "User may already be a friend or have a pending request", check database
+- Nếu muốn gửi lại, xóa old request hoặc accept existing request
+
+#### 2. Accept/Reject không cập nhật UI
+
+**Fix (đã được cải thiện trong version mới):**
+- ✅ Request tự động biến khỏi list sau accept/reject
+- ✅ Dialog header cập nhật số lượng requests còn lại
+- ✅ Dialog tự động đóng khi hết requests
+- ✅ Hiển thị success message
+- ✅ Friend list tự động reload
+
+**Rebuild để có version mới:**
+```bash
+cd ChatClient
+mvn clean install
+mvn javafx:run
+```
+
+#### 3. Sau khi accept, không thấy friend
+
+**Nguyên nhân:**
+- Database transaction failed
+- Friends table không được insert
+
+**Kiểm tra:**
+```sql
+-- Check friends table sau khi accept
+SELECT * FROM friends WHERE user_id = 1 OR user_id = 2;
+
+-- Check friend_request status
+SELECT * FROM friend_requests WHERE request_id = X;
+```
+
+**Server logs:**
+```
+User 2 accepting friend request 1
+Friend request 1 accepted successfully
+```
+
+**Fix:**
+- Nếu request status = 'ACCEPTED' nhưng không có trong friends table:
+```sql
+-- Manual fix (replace with actual IDs)
+INSERT INTO friends (user_id, friend_id) VALUES (1, 2);
+INSERT INTO friends (user_id, friend_id) VALUES (2, 1);
+```
+
+- Restart client để reload friends list
+
+#### 4. Test friend request flow
+
+**Step by step:**
+1. **User A search User B:**
+   ```
+   Click Search → Nhập username → Click Add Friend
+   ```
+
+2. **Check server logs:**
+   ```
+   User 1 sending friend request to user 2
+   Friend request 3 created and notification sent
+   ```
+
+3. **User B nhận notification:**
+   - Alert popup: "You have a new friend request!"
+   - Dialog hiển thị request
+
+4. **User B accept:**
+   ```
+   Click ✓ Accept button
+   ```
+   - Alert: "Friend request accepted!"
+   - Request biến khỏi list
+   - User A hiển thị trong Friends tab
+
+5. **Verify:**
+   ```sql
+   SELECT * FROM friend_requests WHERE request_id = 3;
+   -- request_status = 'ACCEPTED'
+
+   SELECT * FROM friends WHERE user_id IN (1,2);
+   -- Phải có 2 rows: (1,2) và (2,1)
+   ```
+
+---
+
 ## 🐛 Group Chat không hiển thị tin nhắn cũ
 
 ### Nguyên nhân:
