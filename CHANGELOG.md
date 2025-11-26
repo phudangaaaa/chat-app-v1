@@ -1,5 +1,60 @@
 # CHANGELOG
 
+## Version 1.2.1 - Friend Request UX Improvements
+
+### 🔧 Cải tiến:
+
+#### 1. 👥 Friend Request UX Đã được cải thiện hoàn toàn
+- **Auto-update UI**: Request tự động biến khỏi list sau accept/reject
+- **Smart dialog**: Dialog header cập nhật số lượng requests còn lại
+- **Auto-close**: Dialog tự đóng khi đã xử lý hết requests
+- **Prevent double-click**: Buttons tự động disable sau khi click
+- **Visual feedback**: Alert hiển thị success/error messages
+- **Styled buttons**:
+  - ✓ Accept button (màu xanh)
+  - ✕ Reject button (màu đỏ)
+
+**Trải nghiệm mới:**
+1. Click Accept → Alert "Friend request accepted!"
+2. Request biến khỏi list ngay lập tức
+3. Dialog header cập nhật: "You have 2 friend request(s)"
+4. Friend list tự động reload
+5. Nếu hết requests → Dialog tự đóng
+
+#### 2. 📊 Server Logging
+- Detailed logs cho tất cả friend request operations
+- Log user IDs và request IDs
+- Log success/failure status
+- Better error messages: "User may already be a friend or have a pending request"
+
+**Server logs example:**
+```
+User 1 sending friend request to user 2
+Friend request 3 created and notification sent
+User 2 accepting friend request 3
+Friend request 3 accepted successfully
+```
+
+#### 3. 📖 Documentation
+- Thêm section "Friend Request Issues" vào TROUBLESHOOTING.md
+- Hướng dẫn debug các vấn đề thường gặp
+- SQL queries để verify database
+- Step-by-step test flow
+
+### 🐛 Bug fixes:
+
+- **Fix**: Request vẫn hiển thị sau khi accept/reject (đã fix - giờ tự động xóa)
+- **Fix**: Không có feedback khi accept/reject (đã thêm alerts)
+- **Fix**: Dialog không update sau action (đã fix với ObservableList)
+- **Fix**: Friend list không reload (đã fix - auto reload)
+
+### Files changed:
+- `MainController.java`: Enhanced friend request dialog
+- `ClientHandler.java`: Added comprehensive logging
+- `TROUBLESHOOTING.md`: Added friend request debugging guide
+
+---
+
 ## Version 1.2.0 - WebRTC Video Call Integration
 
 ### ✨ Tính năng mới được thêm:
