@@ -200,7 +200,7 @@ public class FriendService {
                     friend.setUserStatus(User.UserStatus.valueOf(rs.getString("user_status")));
                     friend.setStatusMessage(rs.getString("status_message"));
                     friend.setCreatedAt(rs.getTimestamp("created_at"));
-                    friend.setLastLoginAt(rs.getTimestamp("last_login_at"));
+                    friend.setLastLogin(rs.getTimestamp("last_login"));
 
                     friends.add(friend);
                     count++;
