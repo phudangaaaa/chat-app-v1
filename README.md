@@ -104,35 +104,61 @@ mvn clean install
 
 ## ▶️ Chạy ứng dụng
 
-### Cách 1: Chạy từ Eclipse/IntelliJ
+⚠️ **LƯU Ý QUAN TRỌNG**: Client sử dụng JavaFX và cần cấu hình đặc biệt!
 
-#### 1. Import Projects vào Eclipse/IntelliJ:
-- File → Import → Existing Maven Projects
-- Chọn thư mục `ChatServer` và `ChatClient`
+### 📌 Hướng dẫn chi tiết theo IDE:
+- **Eclipse**: Xem file [ECLIPSE_SETUP.md](ECLIPSE_SETUP.md)
+- **IntelliJ IDEA**: Xem file [INTELLIJ_SETUP.md](INTELLIJ_SETUP.md)
 
-#### 2. Chạy Server:
-- Mở class `ChatServer.java`
-- Right-click → Run As → Java Application
-- Server sẽ chạy trên port 8888
+### Cách 1: Sử dụng Scripts (KHUYẾN NGHỊ - Không lỗi JavaFX)
 
-#### 3. Chạy Client:
-- Mở class `ChatClientApp.java`
-- Right-click → Run As → Java Application
-- Có thể chạy nhiều Client cùng lúc để test
+**Linux/Mac:**
+```bash
+# Terminal 1 - Chạy Server
+./run-server.sh
 
-### Cách 2: Chạy từ Command Line
+# Terminal 2 - Chạy Client
+./run-client.sh
+```
+
+**Windows:**
+```cmd
+REM Terminal 1 - Chạy Server
+run-server.bat
+
+REM Terminal 2 - Chạy Client
+run-client.bat
+```
+
+### Cách 2: Chạy từ Command Line với Maven
 
 #### 1. Chạy Server:
 ```bash
 cd ChatServer
-mvn exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
+mvn clean compile exec:java -Dexec.mainClass="com.chatapp.server.ChatServer"
 ```
 
-#### 2. Chạy Client:
+#### 2. Chạy Client (với JavaFX):
 ```bash
 cd ChatClient
-mvn javafx:run
+mvn clean javafx:run
 ```
+
+⚠️ **QUAN TRỌNG**: Phải dùng `mvn javafx:run` chứ KHÔNG phải `mvn exec:java` để tránh lỗi JavaFX!
+
+### Cách 3: Chạy từ Eclipse/IntelliJ
+
+#### Eclipse:
+1. **Server**: Right-click `ChatServer.java` → Run As → Java Application
+2. **Client**:
+   - **Option A (Khuyến nghị)**: Right-click project ChatClient → Run As → Maven build → Goals: `clean javafx:run`
+   - **Option B**: Run `ChatClientApp.java` nhưng cần thêm VM arguments (xem [ECLIPSE_SETUP.md](ECLIPSE_SETUP.md))
+
+#### IntelliJ IDEA:
+1. **Server**: Click Run (▶️) bên cạnh `ChatServer.main()`
+2. **Client**:
+   - **Option A (Khuyến nghị)**: Maven → ChatClient → Plugins → javafx → javafx:run
+   - **Option B**: Run `ChatClientApp.main()` với VM options (xem [INTELLIJ_SETUP.md](INTELLIJ_SETUP.md))
 
 ## 👥 Tài khoản test có sẵn
 
@@ -237,24 +263,54 @@ chat-app-v1/
 
 ## 🐛 Xử lý lỗi thường gặp
 
-### 1. Không kết nối được Server
-- Kiểm tra Server đã chạy chưa
-- Kiểm tra firewall
-- Kiểm tra HOST và PORT trong NetworkManager
+### ❌ 1. Lỗi "JavaFX runtime components are missing"
 
-### 2. Lỗi Database
-- Kiểm tra MySQL đã chạy chưa
-- Kiểm tra username/password trong DatabaseManager
-- Kiểm tra database đã được tạo chưa
+**Nguyên nhân**: Chạy trực tiếp `ChatClientApp.java` mà không có JavaFX runtime.
 
-### 3. Lỗi JavaFX
-- Đảm bảo đã cài đặt JavaFX SDK
-- Kiểm tra version JavaFX trong pom.xml
+**Giải pháp**:
+```bash
+# ✅ ĐÚNG - Dùng Maven plugin
+cd ChatClient
+mvn clean javafx:run
 
-### 4. Lỗi build Maven
+# ❌ SAI - Không dùng cách này
+mvn exec:java
+```
+
+Hoặc xem hướng dẫn chi tiết:
+- Eclipse: [ECLIPSE_SETUP.md](ECLIPSE_SETUP.md)
+- IntelliJ: [INTELLIJ_SETUP.md](INTELLIJ_SETUP.md)
+
+### ❌ 2. Không kết nối được Server
+- ✅ Kiểm tra Server đã chạy trước chưa
+- ✅ Kiểm tra firewall
+- ✅ Kiểm tra HOST và PORT trong NetworkManager
+- ✅ Thử telnet: `telnet localhost 8888`
+
+### ❌ 3. Lỗi Database Connection
+- ✅ Kiểm tra MySQL đã chạy: `mysql -u root -p`
+- ✅ Kiểm tra database đã tạo: `SHOW DATABASES;`
+- ✅ Kiểm tra username/password trong `DatabaseManager.java`
+- ✅ Test connection string
+
+### ❌ 4. Lỗi build Maven
 ```bash
 # Clean và build lại
 mvn clean install -U
+
+# Nếu vẫn lỗi, xóa cache
+rm -rf ~/.m2/repository
+mvn clean install
+```
+
+### ❌ 5. Lỗi "Error: Could not find or load main class"
+```bash
+# Rebuild project
+cd ChatServer
+mvn clean compile
+
+cd ../ChatClient
+mvn clean compile
 ```
 
 ## 📝 Tính năng có thể mở rộng
