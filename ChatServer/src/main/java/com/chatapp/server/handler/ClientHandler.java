@@ -341,10 +341,20 @@ public class ClientHandler implements Runnable {
     private void handleGetMessages(JsonObject data) {
         if (currentUser == null) return;
 
-        int otherUserId = data.get("userId").getAsInt();
         int limit = data.has("limit") ? data.get("limit").getAsInt() : 50;
+        List<Message> messages;
 
-        List<Message> messages = messageService.getPrivateMessages(currentUser.getUserId(), otherUserId, limit);
+        // Check if it's for group or private chat
+        if (data.has("groupId")) {
+            // Get group messages
+            int groupId = data.get("groupId").getAsInt();
+            messages = messageService.getGroupMessages(groupId, limit);
+        } else {
+            // Get private messages
+            int otherUserId = data.get("userId").getAsInt();
+            messages = messageService.getPrivateMessages(currentUser.getUserId(), otherUserId, limit);
+        }
+
         JsonObject responseData = new JsonObject();
         responseData.add("messages", gson.toJsonTree(messages));
         sendResponse(Protocol.createResponse(Protocol.ACTION_GET_MESSAGES, true, "Messages retrieved", responseData));

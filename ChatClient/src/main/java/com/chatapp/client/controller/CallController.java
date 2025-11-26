@@ -4,22 +4,47 @@ import com.chatapp.client.model.CallInfo;
 import com.chatapp.client.model.Protocol;
 import com.chatapp.client.model.User;
 import com.chatapp.client.service.NetworkManager;
+import com.chatapp.client.util.WebcamManager;
+import com.chatapp.client.util.MediaStreamManager;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 public class CallController {
+    // Voice call UI
+    @FXML private VBox voiceContainer;
     @FXML private Label callerNameLabel;
     @FXML private Label callStatusLabel;
     @FXML private Label callDurationLabel;
+    @FXML private Label callTypeLabel;
+
+    // Video call UI
+    @FXML private VBox videoContainer;
+    @FXML private VBox videoInfoOverlay;
+    @FXML private ImageView localVideoView;
+    @FXML private ImageView remoteVideoView;
+    @FXML private Label videoCallerNameLabel;
+    @FXML private Label videoCallStatusLabel;
+    @FXML private Label videoCallDurationLabel;
+
+    // Control buttons
+    @FXML private VBox acceptButtonContainer;
+    @FXML private VBox rejectButtonContainer;
+    @FXML private VBox muteButtonContainer;
+    @FXML private VBox cameraButtonContainer;
     @FXML private Button acceptButton;
     @FXML private Button rejectButton;
     @FXML private Button endCallButton;
-    @FXML private Label callTypeLabel;
+    @FXML private Button muteButton;
+    @FXML private Button cameraButton;
+    @FXML private Label muteLabel;
+    @FXML private Label cameraLabel;
 
     private final NetworkManager networkManager;
     private final Gson gson;
@@ -29,6 +54,12 @@ public class CallController {
     private long callStartTime;
     private Thread durationThread;
 
+    // Media components
+    private WebcamManager webcamManager;
+    private MediaStreamManager mediaStreamManager;
+    private boolean isMuted = false;
+    private boolean isCameraOn = true;
+
     public CallController() {
         this.networkManager = NetworkManager.getInstance();
         this.gson = new Gson();
@@ -37,6 +68,10 @@ public class CallController {
     @FXML
     private void initialize() {
         callDurationLabel.setText("00:00");
+        videoCallDurationLabel.setText("00:00");
+
+        // Initialize webcam manager
+        webcamManager = new WebcamManager();
     }
 
     /**
@@ -48,13 +83,41 @@ public class CallController {
         this.isIncoming = true;
 
         Platform.runLater(() -> {
-            callerNameLabel.setText(caller.getFullName());
-            callTypeLabel.setText(callInfo.getCallType().name() + " Call");
-            callStatusLabel.setText("Incoming call...");
+            boolean isVideoCall = callInfo.getCallType() == CallInfo.CallType.VIDEO;
 
-            acceptButton.setVisible(true);
-            rejectButton.setVisible(true);
+            if (isVideoCall) {
+                // Show video UI
+                videoContainer.setVisible(false);
+                videoContainer.setManaged(false);
+                voiceContainer.setVisible(true);
+                voiceContainer.setManaged(true);
+                videoInfoOverlay.setVisible(false);
+                videoInfoOverlay.setManaged(false);
+
+                callerNameLabel.setText(caller.getFullName());
+                callTypeLabel.setText("Video Call");
+                callStatusLabel.setText("Incoming video call...");
+            } else {
+                // Show voice UI
+                voiceContainer.setVisible(true);
+                voiceContainer.setManaged(true);
+                videoContainer.setVisible(false);
+                videoContainer.setManaged(false);
+
+                callerNameLabel.setText(caller.getFullName());
+                callTypeLabel.setText("Voice Call");
+                callStatusLabel.setText("Incoming call...");
+            }
+
+            acceptButtonContainer.setVisible(true);
+            acceptButtonContainer.setManaged(true);
+            rejectButtonContainer.setVisible(true);
+            rejectButtonContainer.setManaged(true);
             endCallButton.setVisible(false);
+            muteButtonContainer.setVisible(false);
+            muteButtonContainer.setManaged(false);
+            cameraButtonContainer.setVisible(false);
+            cameraButtonContainer.setManaged(false);
         });
     }
 
@@ -67,13 +130,38 @@ public class CallController {
         this.isIncoming = false;
 
         Platform.runLater(() -> {
-            callerNameLabel.setText(receiver.getFullName());
-            callTypeLabel.setText(callInfo.getCallType().name() + " Call");
-            callStatusLabel.setText("Calling...");
+            boolean isVideoCall = callInfo.getCallType() == CallInfo.CallType.VIDEO;
 
-            acceptButton.setVisible(false);
-            rejectButton.setVisible(false);
+            if (isVideoCall) {
+                voiceContainer.setVisible(true);
+                voiceContainer.setManaged(true);
+                videoContainer.setVisible(false);
+                videoContainer.setManaged(false);
+                videoInfoOverlay.setVisible(false);
+
+                callerNameLabel.setText(receiver.getFullName());
+                callTypeLabel.setText("Video Call");
+                callStatusLabel.setText("Calling...");
+            } else {
+                voiceContainer.setVisible(true);
+                voiceContainer.setManaged(true);
+                videoContainer.setVisible(false);
+                videoContainer.setManaged(false);
+
+                callerNameLabel.setText(receiver.getFullName());
+                callTypeLabel.setText("Voice Call");
+                callStatusLabel.setText("Calling...");
+            }
+
+            acceptButtonContainer.setVisible(false);
+            acceptButtonContainer.setManaged(false);
+            rejectButtonContainer.setVisible(false);
+            rejectButtonContainer.setManaged(false);
             endCallButton.setVisible(true);
+            muteButtonContainer.setVisible(false);
+            muteButtonContainer.setManaged(false);
+            cameraButtonContainer.setVisible(false);
+            cameraButtonContainer.setManaged(false);
         });
 
         // Listen for call response
@@ -84,15 +172,16 @@ public class CallController {
         // Handle when other person accepts
         networkManager.setNotificationHandler("CALL_ACCEPTED", protocol -> {
             Platform.runLater(() -> {
-                callStatusLabel.setText("Connected");
+                updateCallStatus("Connected");
                 startCallDuration();
+                startMediaStream();
             });
         });
 
         // Handle when other person rejects
         networkManager.setNotificationHandler("CALL_REJECTED", protocol -> {
             Platform.runLater(() -> {
-                callStatusLabel.setText("Call rejected");
+                updateCallStatus("Call rejected");
                 closeWindow();
             });
         });
@@ -101,7 +190,8 @@ public class CallController {
         networkManager.setNotificationHandler("CALL_ENDED", protocol -> {
             Platform.runLater(() -> {
                 stopCallDuration();
-                callStatusLabel.setText("Call ended");
+                stopMediaStream();
+                updateCallStatus("Call ended");
                 closeWindow();
             });
         });
@@ -115,14 +205,130 @@ public class CallController {
         networkManager.sendRequest(Protocol.ACTION_ACCEPT_CALL, data, response -> {
             if (response.isSuccess()) {
                 Platform.runLater(() -> {
-                    callStatusLabel.setText("Connected");
-                    acceptButton.setVisible(false);
-                    rejectButton.setVisible(false);
+                    updateCallStatus("Connected");
+                    acceptButtonContainer.setVisible(false);
+                    acceptButtonContainer.setManaged(false);
+                    rejectButtonContainer.setVisible(false);
+                    rejectButtonContainer.setManaged(false);
                     endCallButton.setVisible(true);
+
+                    // Show media controls
+                    muteButtonContainer.setVisible(true);
+                    muteButtonContainer.setManaged(true);
+
+                    boolean isVideoCall = callInfo.getCallType() == CallInfo.CallType.VIDEO;
+                    if (isVideoCall) {
+                        cameraButtonContainer.setVisible(true);
+                        cameraButtonContainer.setManaged(true);
+                    }
+
                     startCallDuration();
+                    startMediaStream();
                 });
             }
         });
+    }
+
+    /**
+     * Start media stream (video/audio)
+     */
+    private void startMediaStream() {
+        boolean isVideoCall = callInfo.getCallType() == CallInfo.CallType.VIDEO;
+
+        if (isVideoCall) {
+            // Switch to video UI
+            voiceContainer.setVisible(false);
+            voiceContainer.setManaged(false);
+            videoContainer.setVisible(true);
+            videoContainer.setManaged(true);
+            videoInfoOverlay.setVisible(true);
+            videoInfoOverlay.setManaged(true);
+
+            // Update video overlay info
+            videoCallerNameLabel.setText(otherUser.getFullName());
+            videoCallStatusLabel.setText("Connected");
+
+            // Start webcam capture
+            if (webcamManager.isWebcamAvailable()) {
+                webcamManager.startCapture(localVideoView);
+            } else {
+                System.err.println("No webcam detected!");
+            }
+
+            // Initialize media stream manager (for future P2P streaming)
+            // mediaStreamManager = new MediaStreamManager("localhost", callInfo.getCallId());
+            // mediaStreamManager.startVideoStream(frame -> {
+            //     Platform.runLater(() -> remoteVideoView.setImage(frame));
+            // });
+        }
+
+        // Start audio streaming
+        // if (mediaStreamManager != null) {
+        //     mediaStreamManager.startAudioStream();
+        // }
+    }
+
+    /**
+     * Stop media stream
+     */
+    private void stopMediaStream() {
+        if (webcamManager != null) {
+            webcamManager.stopCapture();
+        }
+
+        if (mediaStreamManager != null) {
+            mediaStreamManager.stopStreaming();
+        }
+    }
+
+    /**
+     * Update call status across all UI elements
+     */
+    private void updateCallStatus(String status) {
+        callStatusLabel.setText(status);
+        videoCallStatusLabel.setText(status);
+    }
+
+    /**
+     * Toggle microphone mute
+     */
+    @FXML
+    private void handleToggleMute() {
+        isMuted = !isMuted;
+
+        if (isMuted) {
+            muteButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
+            muteLabel.setText("Unmute");
+            // TODO: Actually mute microphone
+        } else {
+            muteButton.setStyle("-fx-background-color: rgba(255,255,255,0.3); -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
+            muteLabel.setText("Mute");
+            // TODO: Unmute microphone
+        }
+    }
+
+    /**
+     * Toggle camera on/off
+     */
+    @FXML
+    private void handleToggleCamera() {
+        isCameraOn = !isCameraOn;
+
+        if (isCameraOn) {
+            cameraButton.setStyle("-fx-background-color: rgba(255,255,255,0.3); -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
+            cameraLabel.setText("Camera");
+            localVideoView.setVisible(true);
+            if (webcamManager != null) {
+                webcamManager.startCapture(localVideoView);
+            }
+        } else {
+            cameraButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
+            cameraLabel.setText("Camera Off");
+            localVideoView.setVisible(false);
+            if (webcamManager != null) {
+                webcamManager.stopCapture();
+            }
+        }
     }
 
     @FXML
@@ -133,7 +339,8 @@ public class CallController {
         networkManager.sendRequest(Protocol.ACTION_REJECT_CALL, data, response -> {
             if (response.isSuccess()) {
                 Platform.runLater(() -> {
-                    callStatusLabel.setText("Call rejected");
+                    stopMediaStream();
+                    updateCallStatus("Call rejected");
                     closeWindow();
                 });
             }
@@ -148,7 +355,8 @@ public class CallController {
         networkManager.sendRequest(Protocol.ACTION_END_CALL, data, response -> {
             Platform.runLater(() -> {
                 stopCallDuration();
-                callStatusLabel.setText("Call ended");
+                stopMediaStream();
+                updateCallStatus("Call ended");
                 closeWindow();
             });
         });
@@ -165,8 +373,11 @@ public class CallController {
                     long minutes = duration / 60;
                     long seconds = duration % 60;
 
+                    String timeStr = String.format("%02d:%02d", minutes, seconds);
+
                     Platform.runLater(() -> {
-                        callDurationLabel.setText(String.format("%02d:%02d", minutes, seconds));
+                        callDurationLabel.setText(timeStr);
+                        videoCallDurationLabel.setText(timeStr);
                     });
                 }
             } catch (InterruptedException e) {

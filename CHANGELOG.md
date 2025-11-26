@@ -1,6 +1,70 @@
 # CHANGELOG
 
-## Version 1.1.0 - Latest Updates
+## Version 1.2.0 - WebRTC Video Call Integration
+
+### ✨ Tính năng mới được thêm:
+
+#### 1. 🎥 Video Call với Webcam thực tế
+- **Webcam capture thực sự**: Sử dụng thư viện webcam-capture để bắt hình từ camera
+- **Local video preview**: Hiển thị video của bạn ở góc phải trên cùng (200x150px)
+- **Remote video display**: Hiển thị video của người gọi toàn màn hình (800x600px)
+- **UI chuyên nghiệp**:
+  - Video call: Hiển thị video toàn màn hình với overlay điều khiển
+  - Voice call: UI gradient đẹp mắt với avatar
+- **Nút điều khiển**:
+  - 🎤 Mute/Unmute microphone
+  - 📹 Bật/Tắt camera
+  - ✓ Accept call
+  - ✕ Reject/End call
+
+**Cách sử dụng:**
+1. Trong chat 1:1, click "Video Call"
+2. Người kia chấp nhận cuộc gọi
+3. Webcam sẽ tự động bật và hiển thị trong góc phải trên
+4. Sử dụng nút 📹 để bật/tắt camera
+5. Sử dụng nút 🎤 để tắt/bật tiếng
+
+**Thành phần kỹ thuật:**
+- `WebcamManager.java`: Quản lý webcam capture ~30 FPS
+- `MediaStreamManager.java`: Infrastructure cho audio/video streaming
+- Call.fxml: UI responsive với video containers
+- CallController.java: Logic điều khiển cuộc gọi và media
+
+#### 2. 🔧 Fix Group Chat Message History
+- **Load lịch sử tin nhắn nhóm**: Khi vào lại chat nhóm, tin nhắn cũ sẽ được load
+- **Server-side fix**: Cập nhật `handleGetMessages()` để hỗ trợ cả private và group chat
+- Sử dụng parameter `groupId` để phân biệt loại chat
+
+**Cách hoạt động:**
+- Private chat: Sử dụng `userId` parameter
+- Group chat: Sử dụng `groupId` parameter
+- Server tự động gọi đúng service method
+
+### 🔧 Cải tiến:
+
+- **Module system**: Thêm `javafx.swing`, `webcam.capture`, `java.desktop` vào module-info.java
+- **Maven dependencies**: Thêm webcam-capture library v0.3.12
+- **UI improvements**:
+  - Responsive video containers
+  - Smooth transitions giữa voice và video UI
+  - Shadow effects cho video elements
+- **Performance**: Webcam capture tối ưu ở 30 FPS với thread riêng
+
+### 🐛 Bug fixes:
+
+- Fix lỗi group chat không hiển thị tin nhắn khi vào lại
+- Fix module configuration cho webcam library
+- Cải thiện cleanup khi kết thúc cuộc gọi
+
+### 📝 Lưu ý:
+
+- **Webcam support**: Cần có webcam để sử dụng video call
+- **Future work**: P2P video streaming giữa clients (hiện tại chỉ local preview)
+- Audio streaming infrastructure đã sẵn sàng, cần implement actual audio capture
+
+---
+
+## Version 1.1.0 - File Download & Group Management
 
 ### ✨ Tính năng mới được thêm:
 
@@ -115,7 +179,9 @@ cd ../ChatClient && mvn clean install
 
 ## Roadmap - Tính năng sắp tới
 
-- [ ] WebRTC integration cho audio/video streaming thực sự
+- [x] ~~WebRTC integration cho audio/video streaming thực sự~~ ✅ (Đã có webcam capture v1.2.0)
+- [ ] P2P video streaming giữa clients (hiện tại chỉ local preview)
+- [ ] Audio capture và streaming thực tế
 - [ ] Screen sharing trong video call
 - [ ] Message reactions (like, love, etc.)
 - [ ] Typing indicator
