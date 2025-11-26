@@ -143,19 +143,34 @@ public class MessageService {
                      "WHERE m.group_id = ? " +
                      "ORDER BY m.sent_at DESC LIMIT ?";
 
+        logger.info("Fetching group messages for groupId={}, limit={}", groupId, limit);
+
         try (Connection conn = dbManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setInt(1, groupId);
             pstmt.setInt(2, limit);
 
+            logger.debug("Executing SQL: {}", sql);
+            logger.debug("Parameters: groupId={}, limit={}", groupId, limit);
+
             ResultSet rs = pstmt.executeQuery();
 
+            int count = 0;
             while (rs.next()) {
                 messages.add(extractMessageFromResultSet(rs));
+                count++;
             }
+
+            logger.info("Successfully retrieved {} messages for group {}", count, groupId);
+
+            if (count == 0) {
+                logger.warn("No messages found for group {}. Check if group has messages in database.", groupId);
+            }
+
         } catch (SQLException e) {
             logger.error("Error getting group messages for group {}", groupId, e);
+            logger.error("SQL: {}", sql);
         }
         return messages;
     }
