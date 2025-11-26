@@ -180,17 +180,45 @@ public class FriendService {
                      "WHERE f.user_id = ? " +
                      "ORDER BY u.user_status DESC, u.full_name";
 
+        logger.info("Getting friends list for user {}", userId);
+
         try (Connection conn = dbManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setInt(1, userId);
             ResultSet rs = pstmt.executeQuery();
 
+            int count = 0;
             while (rs.next()) {
-                friends.add(userService.getUserById(rs.getInt("user_id")));
+                try {
+                    // Extract user directly from ResultSet instead of calling getUserById
+                    User friend = new User();
+                    friend.setUserId(rs.getInt("user_id"));
+                    friend.setUsername(rs.getString("username"));
+                    friend.setEmail(rs.getString("email"));
+                    friend.setFullName(rs.getString("full_name"));
+                    friend.setUserStatus(User.UserStatus.valueOf(rs.getString("user_status")));
+                    friend.setStatusMessage(rs.getString("status_message"));
+                    friend.setCreatedAt(rs.getTimestamp("created_at"));
+                    friend.setLastLoginAt(rs.getTimestamp("last_login_at"));
+
+                    friends.add(friend);
+                    count++;
+                    logger.debug("Added friend: {} ({})", friend.getFullName(), friend.getUserId());
+                } catch (Exception e) {
+                    logger.error("Error extracting friend data from result set", e);
+                }
             }
+
+            logger.info("Successfully retrieved {} friends for user {}", count, userId);
+
+            if (count == 0) {
+                logger.warn("No friends found for user {}. Check friends table in database.", userId);
+            }
+
         } catch (SQLException e) {
             logger.error("Error getting friends for user {}", userId, e);
+            logger.error("SQL: {}", sql);
         }
         return friends;
     }
