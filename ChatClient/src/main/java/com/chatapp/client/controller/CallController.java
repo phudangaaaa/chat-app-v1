@@ -71,7 +71,14 @@ public class CallController {
         videoCallDurationLabel.setText("00:00");
 
         // Initialize webcam manager
-        webcamManager = new WebcamManager();
+        try {
+            webcamManager = new WebcamManager();
+            System.out.println("WebcamManager initialized successfully");
+        } catch (Exception e) {
+            System.err.println("Failed to initialize WebcamManager: " + e.getMessage());
+            e.printStackTrace();
+            webcamManager = null;
+        }
     }
 
     /**
@@ -249,10 +256,16 @@ public class CallController {
             videoCallStatusLabel.setText("Connected");
 
             // Start webcam capture
-            if (webcamManager.isWebcamAvailable()) {
-                webcamManager.startCapture(localVideoView);
+            if (webcamManager != null && webcamManager.isWebcamAvailable()) {
+                try {
+                    webcamManager.startCapture(localVideoView);
+                    System.out.println("Webcam capture started");
+                } catch (Exception e) {
+                    System.err.println("Failed to start webcam: " + e.getMessage());
+                    e.printStackTrace();
+                }
             } else {
-                System.err.println("No webcam detected!");
+                System.err.println("No webcam available or WebcamManager not initialized!");
             }
 
             // Initialize media stream manager (for future P2P streaming)

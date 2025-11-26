@@ -348,11 +348,15 @@ public class ClientHandler implements Runnable {
         if (data.has("groupId")) {
             // Get group messages
             int groupId = data.get("groupId").getAsInt();
+            logger.info("Getting group messages for group {} (user: {})", groupId, currentUser.getUserId());
             messages = messageService.getGroupMessages(groupId, limit);
+            logger.info("Retrieved {} group messages for group {}", messages.size(), groupId);
         } else {
             // Get private messages
             int otherUserId = data.get("userId").getAsInt();
+            logger.info("Getting private messages between {} and {}", currentUser.getUserId(), otherUserId);
             messages = messageService.getPrivateMessages(currentUser.getUserId(), otherUserId, limit);
+            logger.info("Retrieved {} private messages", messages.size());
         }
 
         JsonObject responseData = new JsonObject();

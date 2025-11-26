@@ -219,14 +219,27 @@ public class ChatController {
         data.addProperty("groupId", group.getGroupId());
         data.addProperty("limit", 100);
 
+        System.out.println("Loading group messages for group ID: " + group.getGroupId());
+
         networkManager.sendRequest(Protocol.ACTION_GET_MESSAGES, data, response -> {
             if (response.isSuccess()) {
-                List<Message> messageList = gson.fromJson(
-                    response.getData().get("messages"),
-                    new TypeToken<List<Message>>(){}.getType()
-                );
-                Collections.reverse(messageList);
-                messages.setAll(messageList);
+                try {
+                    List<Message> messageList = gson.fromJson(
+                        response.getData().get("messages"),
+                        new TypeToken<List<Message>>(){}.getType()
+                    );
+                    System.out.println("Received " + messageList.size() + " group messages");
+                    Collections.reverse(messageList);
+                    Platform.runLater(() -> {
+                        messages.setAll(messageList);
+                        scrollToBottom();
+                    });
+                } catch (Exception e) {
+                    System.err.println("Error parsing group messages: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            } else {
+                System.err.println("Failed to load group messages: " + response.getMessage());
             }
         });
     }

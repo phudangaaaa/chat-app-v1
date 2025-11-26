@@ -324,6 +324,17 @@ mvn clean compile
 - [ ] Dark mode
 - [ ] Multi-language support
 
+## 🐛 Troubleshooting - Xử lý lỗi
+
+Nếu gặp lỗi khi sử dụng ứng dụng, vui lòng xem:
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Hướng dẫn chi tiết xử lý các lỗi thường gặp
+
+Các vấn đề phổ biến:
+- Group chat không hiển thị tin nhắn cũ
+- Video call không hoạt động
+- Build errors
+- JavaFX runtime issues
+
 ## 📄 License
 
 Dự án được phát triển cho mục đích học tập.
