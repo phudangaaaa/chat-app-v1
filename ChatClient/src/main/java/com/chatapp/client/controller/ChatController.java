@@ -11,9 +11,13 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 import java.io.File;
@@ -32,6 +36,7 @@ public class ChatController {
     @FXML private Button emojiButton;
     @FXML private Button videoCallButton;
     @FXML private Button voiceCallButton;
+    @FXML private Button addMemberButton;
 
     private final NetworkManager networkManager;
     private final Gson gson;
@@ -65,6 +70,8 @@ public class ChatController {
         this.friend = friend;
         this.isGroupChat = false;
         chatTitleLabel.setText("Chat with " + friend.getFullName());
+        addMemberButton.setVisible(false);
+        addMemberButton.setManaged(false);
         loadPrivateMessages();
     }
 
@@ -72,6 +79,12 @@ public class ChatController {
         this.group = group;
         this.isGroupChat = true;
         chatTitleLabel.setText("Group: " + group.getGroupName());
+        addMemberButton.setVisible(true);
+        addMemberButton.setManaged(true);
+        voiceCallButton.setVisible(false);
+        voiceCallButton.setManaged(false);
+        videoCallButton.setVisible(false);
+        videoCallButton.setManaged(false);
         loadGroupMessages();
     }
 
@@ -96,20 +109,39 @@ public class ChatController {
                     }
 
                     // Message content
-                    Label contentLabel = new Label(formatMessageContent(message));
-                    contentLabel.setWrapText(true);
-                    contentLabel.setMaxWidth(400);
-
                     boolean isMine = message.getSenderId() == SessionManager.getInstance().getCurrentUserId();
-                    if (isMine) {
-                        contentLabel.setStyle("-fx-background-color: #dcf8c6; -fx-padding: 8; -fx-background-radius: 10;");
-                        vbox.setStyle("-fx-alignment: center-right;");
-                    } else {
-                        contentLabel.setStyle("-fx-background-color: #ffffff; -fx-padding: 8; -fx-background-radius: 10; -fx-border-color: #ddd; -fx-border-radius: 10;");
-                        vbox.setStyle("-fx-alignment: center-left;");
-                    }
 
-                    vbox.getChildren().add(contentLabel);
+                    // Check if it's a file message
+                    if (message.getMessageType() != MessageType.TEXT && message.getFileUrl() != null) {
+                        // Create clickable file link
+                        Hyperlink fileLink = new Hyperlink(formatMessageContent(message));
+                        fileLink.setWrapText(true);
+                        fileLink.setMaxWidth(400);
+                        fileLink.setOnAction(e -> handleDownloadFile(message));
+
+                        if (isMine) {
+                            fileLink.setStyle("-fx-background-color: #dcf8c6; -fx-padding: 8; -fx-background-radius: 10;");
+                            vbox.setStyle("-fx-alignment: center-right;");
+                        } else {
+                            fileLink.setStyle("-fx-background-color: #ffffff; -fx-padding: 8; -fx-background-radius: 10; -fx-border-color: #ddd; -fx-border-radius: 10;");
+                            vbox.setStyle("-fx-alignment: center-left;");
+                        }
+                        vbox.getChildren().add(fileLink);
+                    } else {
+                        // Regular text message
+                        Label contentLabel = new Label(formatMessageContent(message));
+                        contentLabel.setWrapText(true);
+                        contentLabel.setMaxWidth(400);
+
+                        if (isMine) {
+                            contentLabel.setStyle("-fx-background-color: #dcf8c6; -fx-padding: 8; -fx-background-radius: 10;");
+                            vbox.setStyle("-fx-alignment: center-right;");
+                        } else {
+                            contentLabel.setStyle("-fx-background-color: #ffffff; -fx-padding: 8; -fx-background-radius: 10; -fx-border-color: #ddd; -fx-border-radius: 10;");
+                            vbox.setStyle("-fx-alignment: center-left;");
+                        }
+                        vbox.getChildren().add(contentLabel);
+                    }
 
                     // Timestamp
                     Label timeLabel = new Label(message.getSentAt() != null ? message.getSentAt().toString() : "");
@@ -153,6 +185,14 @@ public class ChatController {
                     (message.getReceiverId() != null && message.getReceiverId() == friend.getUserId())) {
                     Platform.runLater(() -> messages.add(message));
                 }
+            }
+        });
+
+        // Handle incoming call notification
+        networkManager.setNotificationHandler(Protocol.NOTIFY_INCOMING_CALL, protocol -> {
+            CallInfo callInfo = gson.fromJson(protocol.getData().get("data"), CallInfo.class);
+            if (!isGroupChat && callInfo.getCallerId() == friend.getUserId()) {
+                Platform.runLater(() -> openCallWindow(callInfo, friend, true));
             }
         });
     }
@@ -277,6 +317,98 @@ public class ChatController {
     }
 
     @FXML
+    private void handleAddMembers() {
+        if (!isGroupChat || group == null) {
+            return;
+        }
+
+        // Get current user's friends
+        networkManager.sendRequest(Protocol.ACTION_GET_FRIENDS, response -> {
+            if (response.isSuccess()) {
+                List<User> friends = gson.fromJson(
+                    response.getData().get("friends"),
+                    new com.google.gson.reflect.TypeToken<List<User>>(){}.getType()
+                );
+
+                Platform.runLater(() -> showAddMembersDialog(friends));
+            }
+        });
+    }
+
+    private void showAddMembersDialog(List<User> friends) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Add Members to Group");
+        dialog.setHeaderText("Select friends to add to " + group.getGroupName());
+
+        // Filter out users who are already in the group
+        List<User> availableFriends = new java.util.ArrayList<>();
+        for (User friend : friends) {
+            if (!group.getMemberIds().contains(friend.getUserId())) {
+                availableFriends.add(friend);
+            }
+        }
+
+        if (availableFriends.isEmpty()) {
+            showAlert("Add Members", "All your friends are already in this group!");
+            return;
+        }
+
+        ListView<User> friendListView = new ListView<>(FXCollections.observableArrayList(availableFriends));
+        friendListView.getSelectionModel().setSelectionMode(javafx.scene.control.SelectionMode.MULTIPLE);
+        friendListView.setCellFactory(param -> new ListCell<User>() {
+            @Override
+            protected void updateItem(User user, boolean empty) {
+                super.updateItem(user, empty);
+                if (empty || user == null) {
+                    setText(null);
+                } else {
+                    setText(user.getFullName() + " (@" + user.getUsername() + ")");
+                }
+            }
+        });
+
+        VBox content = new VBox(10);
+        content.getChildren().addAll(
+            new Label("Select members to add (Ctrl+Click for multiple):"),
+            friendListView
+        );
+        content.setPrefHeight(300);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        dialog.showAndWait().ifPresent(result -> {
+            if (result == ButtonType.OK) {
+                List<User> selectedUsers = friendListView.getSelectionModel().getSelectedItems();
+                if (!selectedUsers.isEmpty()) {
+                    addMembersToGroup(selectedUsers);
+                }
+            }
+        });
+    }
+
+    private void addMembersToGroup(List<User> users) {
+        for (User user : users) {
+            JsonObject data = new JsonObject();
+            data.addProperty("groupId", group.getGroupId());
+            data.addProperty("userId", user.getUserId());
+
+            networkManager.sendRequest(Protocol.ACTION_JOIN_GROUP, data, response -> {
+                if (response.isSuccess()) {
+                    Platform.runLater(() -> {
+                        group.addMember(user.getUserId());
+                        showAlert("Success", user.getFullName() + " added to group!");
+                    });
+                } else {
+                    Platform.runLater(() -> {
+                        showAlert("Error", "Failed to add " + user.getFullName() + ": " + response.getMessage());
+                    });
+                }
+            });
+        }
+    }
+
+    @FXML
     private void handleVideoCall() {
         if (!isGroupChat) {
             initiateCall(CallInfo.CallType.VIDEO);
@@ -301,12 +433,37 @@ public class ChatController {
 
         networkManager.sendRequest(Protocol.ACTION_INITIATE_CALL, data, response -> {
             if (response.isSuccess()) {
-                showAlert(callType.name() + " Call", "Call initiated to " + friend.getFullName());
-                // Here you would open a call window with WebRTC implementation
+                CallInfo callInfo = gson.fromJson(response.getData().get("call"), CallInfo.class);
+                Platform.runLater(() -> openCallWindow(callInfo, friend, false));
             } else {
                 showAlert("Error", response.getMessage());
             }
         });
+    }
+
+    private void openCallWindow(CallInfo callInfo, User otherUser, boolean isIncoming) {
+        try {
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/Call.fxml"));
+            Parent root = loader.load();
+
+            CallController controller = loader.getController();
+            if (isIncoming) {
+                controller.initializeIncomingCall(callInfo, otherUser);
+            } else {
+                controller.initializeOutgoingCall(callInfo, otherUser);
+            }
+
+            Stage callStage = new Stage();
+            callStage.setTitle(callInfo.getCallType().name() + " Call");
+            callStage.setScene(new Scene(root));
+            callStage.initModality(Modality.APPLICATION_MODAL);
+            callStage.setResizable(false);
+            callStage.show();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Error", "Failed to open call window: " + e.getMessage());
+        }
     }
 
     private String determineFileType(String fileName) {
@@ -328,6 +485,47 @@ public class ChatController {
             default:
                 return "FILE";
         }
+    }
+
+    private void handleDownloadFile(Message message) {
+        if (message.getFileUrl() == null) {
+            showAlert("Error", "File not found");
+            return;
+        }
+
+        // Request file from server
+        JsonObject data = new JsonObject();
+        data.addProperty("filePath", message.getFileUrl());
+
+        networkManager.sendRequest(Protocol.ACTION_RECEIVE_FILE, data, response -> {
+            if (response.isSuccess()) {
+                try {
+                    String base64Data = response.getData().get("fileData").getAsString();
+                    byte[] fileBytes = Base64.getDecoder().decode(base64Data);
+
+                    // Show save dialog
+                    Platform.runLater(() -> {
+                        FileChooser fileChooser = new FileChooser();
+                        fileChooser.setTitle("Save File");
+                        fileChooser.setInitialFileName(message.getFileName());
+
+                        File saveFile = fileChooser.showSaveDialog(messageListView.getScene().getWindow());
+                        if (saveFile != null) {
+                            try {
+                                Files.write(saveFile.toPath(), fileBytes);
+                                showAlert("Success", "File downloaded successfully!");
+                            } catch (IOException e) {
+                                showAlert("Error", "Failed to save file: " + e.getMessage());
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    showAlert("Error", "Failed to decode file: " + e.getMessage());
+                }
+            } else {
+                showAlert("Error", "Failed to download file: " + response.getMessage());
+            }
+        });
     }
 
     private void scrollToBottom() {

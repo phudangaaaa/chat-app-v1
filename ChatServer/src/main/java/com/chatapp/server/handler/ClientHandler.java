@@ -116,6 +116,9 @@ public class ClientHandler implements Runnable {
                 case Protocol.ACTION_SEND_FILE:
                     handleSendFile(data);
                     break;
+                case Protocol.ACTION_RECEIVE_FILE:
+                    handleReceiveFile(data);
+                    break;
                 case Protocol.ACTION_CREATE_GROUP:
                     handleCreateGroup(data);
                     break;
@@ -374,6 +377,20 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private void handleReceiveFile(JsonObject data) {
+        String filePath = data.get("filePath").getAsString();
+
+        String fileData = FileUtil.readFileAsBase64(filePath);
+
+        if (fileData != null) {
+            JsonObject responseData = new JsonObject();
+            responseData.addProperty("fileData", fileData);
+            sendResponse(Protocol.createResponse(Protocol.ACTION_RECEIVE_FILE, true, "File retrieved", responseData));
+        } else {
+            sendResponse(Protocol.createResponse(Protocol.ACTION_RECEIVE_FILE, false, "Failed to read file"));
+        }
+    }
+
     private void handleCreateGroup(JsonObject data) {
         if (currentUser == null) return;
 
@@ -395,7 +412,9 @@ public class ClientHandler implements Runnable {
         if (currentUser == null) return;
 
         int groupId = data.get("groupId").getAsInt();
-        boolean success = groupService.addMember(groupId, currentUser.getUserId());
+        // Check if userId is specified (for adding other users) or use current user
+        int userId = data.has("userId") ? data.get("userId").getAsInt() : currentUser.getUserId();
+        boolean success = groupService.addMember(groupId, userId);
 
         sendResponse(Protocol.createResponse(Protocol.ACTION_JOIN_GROUP, success,
                 success ? "Joined group" : "Failed to join"));

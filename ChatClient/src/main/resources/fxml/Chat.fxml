@@ -14,6 +14,8 @@
         <HBox spacing="10" alignment="CENTER_LEFT" style="-fx-background-color: #34495e; -fx-padding: 10;">
             <Label fx:id="chatTitleLabel" text="Chat" style="-fx-text-fill: white; -fx-font-size: 16; -fx-font-weight: bold;" HBox.hgrow="ALWAYS" />
 
+            <Button fx:id="addMemberButton" text="➕ Add Members" onAction="#handleAddMembers"
+                   style="-fx-background-color: #9b59b6; -fx-text-fill: white;" visible="false" managed="false" />
             <Button fx:id="voiceCallButton" text="Voice Call" onAction="#handleVoiceCall"
                    style="-fx-background-color: #27ae60; -fx-text-fill: white;" />
             <Button fx:id="videoCallButton" text="Video Call" onAction="#handleVideoCall"
