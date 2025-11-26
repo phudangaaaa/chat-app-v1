@@ -2,6 +2,7 @@ package com.chatapp.server.service;
 
 import com.chatapp.server.model.FriendRequest;
 import com.chatapp.server.model.User;
+import com.chatapp.server.model.UserStatus;
 import com.chatapp.server.util.DatabaseManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -197,7 +198,7 @@ public class FriendService {
                     friend.setUsername(rs.getString("username"));
                     friend.setEmail(rs.getString("email"));
                     friend.setFullName(rs.getString("full_name"));
-                    friend.setUserStatus(User.UserStatus.valueOf(rs.getString("user_status")));
+                    friend.setUserStatus(UserStatus.valueOf(rs.getString("user_status")));
                     friend.setStatusMessage(rs.getString("status_message"));
                     friend.setCreatedAt(rs.getTimestamp("created_at"));
                     friend.setLastLogin(rs.getTimestamp("last_login"));
