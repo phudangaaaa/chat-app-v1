@@ -8,7 +8,9 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class GroupService {
     private static final Logger logger = LoggerFactory.getLogger(GroupService.class);
@@ -131,42 +133,31 @@ public class GroupService {
      */
     public List<Group> getUserGroups(int userId) {
         List<Group> groups = new ArrayList<>();
-        // Optimized query: fetch groups with member IDs in a single query using GROUP_CONCAT
-        String sql = "SELECT g.*, GROUP_CONCAT(gm2.user_id) as member_ids " +
-                     "FROM chat_groups g " +
-                     "JOIN group_members gm ON g.group_id = gm.group_id " +
-                     "LEFT JOIN group_members gm2 ON g.group_id = gm2.group_id " +
-                     "WHERE gm.user_id = ? " +
-                     "GROUP BY g.group_id " +
-                     "ORDER BY g.created_at DESC";
+        // Step 1: Get all groups for the user (simple query, no joins)
+        String groupSql = "SELECT DISTINCT g.* FROM chat_groups g " +
+                          "JOIN group_members gm ON g.group_id = gm.group_id " +
+                          "WHERE gm.user_id = ? " +
+                          "ORDER BY g.created_at DESC";
 
         logger.info("Getting groups list for user {}", userId);
 
         try (Connection conn = dbManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(groupSql)) {
 
             pstmt.setInt(1, userId);
             ResultSet rs = pstmt.executeQuery();
 
             int count = 0;
+            // Collect all group IDs first
+            List<Integer> groupIds = new ArrayList<>();
+
             while (rs.next()) {
                 try {
                     Group group = extractGroupFromResultSet(rs);
-
-                    // Parse member IDs from GROUP_CONCAT result
-                    String memberIdsStr = rs.getString("member_ids");
-                    List<Integer> memberIds = new ArrayList<>();
-                    if (memberIdsStr != null && !memberIdsStr.isEmpty()) {
-                        String[] ids = memberIdsStr.split(",");
-                        for (String id : ids) {
-                            memberIds.add(Integer.parseInt(id.trim()));
-                        }
-                    }
-                    group.setMemberIds(memberIds);
-
                     groups.add(group);
+                    groupIds.add(group.getGroupId());
                     count++;
-                    logger.debug("Added group: {} ({}) with {} members", group.getGroupName(), group.getGroupId(), memberIds.size());
+                    logger.debug("Added group: {} ({})", group.getGroupName(), group.getGroupId());
                 } catch (Exception e) {
                     logger.error("Error extracting group data from result set", e);
                 }
@@ -176,11 +167,41 @@ public class GroupService {
 
             if (count == 0) {
                 logger.warn("No groups found for user {}. Check group_members table in database.", userId);
+                return groups;
+            }
+
+            // Step 2: Load all member IDs for all groups in one query
+            if (!groupIds.isEmpty()) {
+                String placeholders = String.join(",", groupIds.stream().map(id -> "?").toArray(String[]::new));
+                String memberSql = "SELECT group_id, user_id FROM group_members WHERE group_id IN (" + placeholders + ")";
+
+                try (PreparedStatement memberPstmt = conn.prepareStatement(memberSql)) {
+                    for (int i = 0; i < groupIds.size(); i++) {
+                        memberPstmt.setInt(i + 1, groupIds.get(i));
+                    }
+
+                    ResultSet memberRs = memberPstmt.executeQuery();
+
+                    // Create a map of groupId -> list of member IDs
+                    Map<Integer, List<Integer>> groupMembersMap = new HashMap<>();
+                    while (memberRs.next()) {
+                        int groupId = memberRs.getInt("group_id");
+                        int memberId = memberRs.getInt("user_id");
+
+                        groupMembersMap.computeIfAbsent(groupId, k -> new ArrayList<>()).add(memberId);
+                    }
+
+                    // Populate member IDs for each group
+                    for (Group group : groups) {
+                        List<Integer> memberIds = groupMembersMap.getOrDefault(group.getGroupId(), new ArrayList<>());
+                        group.setMemberIds(memberIds);
+                        logger.debug("Group {} has {} members", group.getGroupName(), memberIds.size());
+                    }
+                }
             }
 
         } catch (SQLException e) {
             logger.error("Error getting groups for user {}", userId, e);
-            logger.error("SQL: {}", sql);
         }
         return groups;
     }
