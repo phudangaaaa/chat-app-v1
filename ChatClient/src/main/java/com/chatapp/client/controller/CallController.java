@@ -126,6 +126,9 @@ public class CallController {
             cameraButtonContainer.setVisible(false);
             cameraButtonContainer.setManaged(false);
         });
+
+        // Setup notification handlers for incoming call too
+        setupCallNotificationHandlers();
     }
 
     /**
@@ -177,7 +180,7 @@ public class CallController {
 
     private void setupCallNotificationHandlers() {
         // Handle when other person accepts
-        networkManager.setNotificationHandler("CALL_ACCEPTED", protocol -> {
+        networkManager.setNotificationHandler(Protocol.NOTIFY_CALL_ACCEPTED, protocol -> {
             Platform.runLater(() -> {
                 updateCallStatus("Connected");
                 startCallDuration();
@@ -186,7 +189,7 @@ public class CallController {
         });
 
         // Handle when other person rejects
-        networkManager.setNotificationHandler("CALL_REJECTED", protocol -> {
+        networkManager.setNotificationHandler(Protocol.NOTIFY_CALL_REJECTED, protocol -> {
             Platform.runLater(() -> {
                 updateCallStatus("Call rejected");
                 closeWindow();
@@ -194,7 +197,7 @@ public class CallController {
         });
 
         // Handle when call ends
-        networkManager.setNotificationHandler("CALL_ENDED", protocol -> {
+        networkManager.setNotificationHandler(Protocol.NOTIFY_CALL_ENDED, protocol -> {
             Platform.runLater(() -> {
                 stopCallDuration();
                 stopMediaStream();

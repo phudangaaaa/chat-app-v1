@@ -58,6 +58,9 @@ public class Protocol {
     public static final String NOTIFY_NEW_MESSAGE = "NOTIFY_NEW_MESSAGE";
     public static final String NOTIFY_FRIEND_REQUEST = "NOTIFY_FRIEND_REQUEST";
     public static final String NOTIFY_INCOMING_CALL = "NOTIFY_INCOMING_CALL";
+    public static final String NOTIFY_CALL_ACCEPTED = "NOTIFY_CALL_ACCEPTED";
+    public static final String NOTIFY_CALL_REJECTED = "NOTIFY_CALL_REJECTED";
+    public static final String NOTIFY_CALL_ENDED = "NOTIFY_CALL_ENDED";
 
     public Protocol() {
         this.data = new JsonObject();

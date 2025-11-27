@@ -509,26 +509,64 @@ public class ClientHandler implements Runnable {
 
     private void handleAcceptCall(JsonObject data) {
         int callId = data.get("callId").getAsInt();
+
+        // Get call info to know who to notify
+        CallInfo call = callService.getCallById(callId);
+
         boolean success = callService.acceptCall(callId);
 
         sendResponse(Protocol.createResponse(Protocol.ACTION_ACCEPT_CALL, success,
                 success ? "Call accepted" : "Failed to accept"));
+
+        // Notify caller that call was accepted
+        if (success && call != null) {
+            notifyUser(call.getCallerId(), Protocol.NOTIFY_CALL_ACCEPTED, call);
+            logger.info("Notified caller {} that call {} was accepted", call.getCallerId(), callId);
+        }
     }
 
     private void handleRejectCall(JsonObject data) {
         int callId = data.get("callId").getAsInt();
+
+        // Get call info to know who to notify
+        CallInfo call = callService.getCallById(callId);
+
         boolean success = callService.rejectCall(callId);
 
         sendResponse(Protocol.createResponse(Protocol.ACTION_REJECT_CALL, success,
                 success ? "Call rejected" : "Failed to reject"));
+
+        // Notify caller that call was rejected
+        if (success && call != null) {
+            notifyUser(call.getCallerId(), Protocol.NOTIFY_CALL_REJECTED, call);
+            logger.info("Notified caller {} that call {} was rejected", call.getCallerId(), callId);
+        }
     }
 
     private void handleEndCall(JsonObject data) {
         int callId = data.get("callId").getAsInt();
+
+        // Get call info to know who to notify
+        CallInfo call = callService.getCallById(callId);
+
         boolean success = callService.endCall(callId);
 
         sendResponse(Protocol.createResponse(Protocol.ACTION_END_CALL, success,
                 success ? "Call ended" : "Failed to end"));
+
+        // Notify the other person that call ended
+        if (success && call != null && currentUser != null) {
+            int otherUserId;
+            if (currentUser.getUserId() == call.getCallerId()) {
+                // Current user is caller, notify receiver
+                otherUserId = call.getReceiverId();
+            } else {
+                // Current user is receiver, notify caller
+                otherUserId = call.getCallerId();
+            }
+            notifyUser(otherUserId, Protocol.NOTIFY_CALL_ENDED, call);
+            logger.info("Notified user {} that call {} ended", otherUserId, callId);
+        }
     }
 
     private void handleCallSignal(JsonObject data) {
