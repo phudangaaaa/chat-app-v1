@@ -149,6 +149,15 @@ public class ClientHandler implements Runnable {
                 case Protocol.ACTION_CALL_SIGNAL:
                     handleCallSignal(data);
                     break;
+                case Protocol.ACTION_WEBRTC_OFFER:
+                    handleWebRTCOffer(data);
+                    break;
+                case Protocol.ACTION_WEBRTC_ANSWER:
+                    handleWebRTCAnswer(data);
+                    break;
+                case Protocol.ACTION_WEBRTC_ICE_CANDIDATE:
+                    handleWebRTCIceCandidate(data);
+                    break;
                 default:
                     sendResponse(Protocol.createResponse(action, false, "Unknown action"));
             }
@@ -625,6 +634,119 @@ public class ClientHandler implements Runnable {
             logger.info("Forwarded {} signal from {} to {}", signalType,
                 currentUser != null ? currentUser.getUserId() : "unknown", receiverId);
         }
+    }
+
+    /**
+     * Handle WebRTC Offer - Relay SDP offer from caller to receiver
+     * Server only relays the signaling data, does NOT process media
+     */
+    private void handleWebRTCOffer(JsonObject data) {
+        logger.info("Handling WebRTC Offer");
+
+        if (!data.has("receiverId") || !data.has("sdp")) {
+            logger.error("WEBRTC_OFFER missing required fields (receiverId, sdp)");
+            sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_OFFER, false, "Missing required fields"));
+            return;
+        }
+
+        int receiverId = data.get("receiverId").getAsInt();
+        String sdp = data.get("sdp").getAsString();
+
+        // Add caller information
+        if (currentUser != null) {
+            data.addProperty("callerId", currentUser.getUserId());
+            data.addProperty("callerName", currentUser.getFullName());
+        }
+
+        // Check if receiver is online
+        ClientHandler receiver = server.getOnlineUser(receiverId);
+        if (receiver == null) {
+            logger.warn("Cannot send WebRTC offer to user {} - user offline", receiverId);
+            sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_OFFER, false, "Receiver is offline"));
+            return;
+        }
+
+        // Relay offer to receiver
+        notifyUser(receiverId, Protocol.NOTIFY_WEBRTC_OFFER, data);
+        logger.info("Relayed WebRTC offer from user {} to user {}",
+            currentUser != null ? currentUser.getUserId() : "unknown", receiverId);
+
+        sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_OFFER, true, "Offer relayed successfully"));
+    }
+
+    /**
+     * Handle WebRTC Answer - Relay SDP answer from receiver to caller
+     * Server only relays the signaling data, does NOT process media
+     */
+    private void handleWebRTCAnswer(JsonObject data) {
+        logger.info("Handling WebRTC Answer");
+
+        if (!data.has("callerId") || !data.has("sdp")) {
+            logger.error("WEBRTC_ANSWER missing required fields (callerId, sdp)");
+            sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_ANSWER, false, "Missing required fields"));
+            return;
+        }
+
+        int callerId = data.get("callerId").getAsInt();
+        String sdp = data.get("sdp").getAsString();
+
+        // Add answerer information
+        if (currentUser != null) {
+            data.addProperty("answererId", currentUser.getUserId());
+            data.addProperty("answererName", currentUser.getFullName());
+        }
+
+        // Check if caller is online
+        ClientHandler caller = server.getOnlineUser(callerId);
+        if (caller == null) {
+            logger.warn("Cannot send WebRTC answer to user {} - user offline", callerId);
+            sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_ANSWER, false, "Caller is offline"));
+            return;
+        }
+
+        // Relay answer to caller
+        notifyUser(callerId, Protocol.NOTIFY_WEBRTC_ANSWER, data);
+        logger.info("Relayed WebRTC answer from user {} to user {}",
+            currentUser != null ? currentUser.getUserId() : "unknown", callerId);
+
+        sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_ANSWER, true, "Answer relayed successfully"));
+    }
+
+    /**
+     * Handle WebRTC ICE Candidate - Relay ICE candidate for NAT traversal
+     * Server only relays the signaling data, does NOT process media
+     */
+    private void handleWebRTCIceCandidate(JsonObject data) {
+        logger.debug("Handling WebRTC ICE Candidate");
+
+        if (!data.has("targetUserId") || !data.has("candidate")) {
+            logger.error("WEBRTC_ICE_CANDIDATE missing required fields (targetUserId, candidate)");
+            sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_ICE_CANDIDATE, false, "Missing required fields"));
+            return;
+        }
+
+        int targetUserId = data.get("targetUserId").getAsInt();
+        String candidate = data.get("candidate").getAsString();
+
+        // Add sender information
+        if (currentUser != null) {
+            data.addProperty("senderId", currentUser.getUserId());
+        }
+
+        // Check if target is online
+        ClientHandler target = server.getOnlineUser(targetUserId);
+        if (target == null) {
+            logger.warn("Cannot send ICE candidate to user {} - user offline", targetUserId);
+            // Don't send error response - ICE candidates can be sent during connection setup
+            return;
+        }
+
+        // Relay ICE candidate to target
+        notifyUser(targetUserId, Protocol.NOTIFY_WEBRTC_ICE_CANDIDATE, data);
+        logger.debug("Relayed ICE candidate from user {} to user {}",
+            currentUser != null ? currentUser.getUserId() : "unknown", targetUserId);
+
+        sendResponse(Protocol.createResponse(Protocol.ACTION_WEBRTC_ICE_CANDIDATE, true, "ICE candidate relayed"));
     }
 
     private void notifyUser(int userId, String notificationType, Object data) {

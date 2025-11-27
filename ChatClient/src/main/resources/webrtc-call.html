@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC P2P Call</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .video-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            background: #1a1a1a;
+        }
+
+        #localVideo {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 3px solid white;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            background: #1a1a1a;
+            z-index: 10;
+        }
+
+        .controls {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .control-btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-btn.start {
+            background: #10b981;
+            color: white;
+        }
+
+        .control-btn.end {
+            background: #ef4444;
+            color: white;
+        }
+
+        .control-btn.mute {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .control-btn.video-toggle {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .control-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .status {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 20;
+        }
+
+        .status.connecting {
+            background: rgba(251, 191, 36, 0.9);
+        }
+
+        .status.connected {
+            background: rgba(16, 185, 129, 0.9);
+        }
+
+        .status.disconnected {
+            background: rgba(239, 68, 68, 0.9);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">Initializing...</div>
+
+    <div class="video-container">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay muted playsinline></video>
+    </div>
+
+    <div class="controls">
+        <button id="startCallBtn" class="control-btn start">Start Call</button>
+        <button id="muteBtn" class="control-btn mute" disabled>Mute Audio</button>
+        <button id="videoToggleBtn" class="control-btn video-toggle" disabled>Stop Video</button>
+        <button id="endCallBtn" class="control-btn end" disabled>End Call</button>
+    </div>
+
+    <script>
+        // WebRTC Configuration
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        };
+
+        // Global variables
+        let peerConnection = null;
+        let localStream = null;
+        let isAudioMuted = false;
+        let isVideoEnabled = true;
+
+        // DOM elements
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const status = document.getElementById('status');
+        const startCallBtn = document.getElementById('startCallBtn');
+        const muteBtn = document.getElementById('muteBtn');
+        const videoToggleBtn = document.getElementById('videoToggleBtn');
+        const endCallBtn = document.getElementById('endCallBtn');
+
+        // Update status display
+        function updateStatus(message, type = '') {
+            status.textContent = message;
+            status.className = 'status ' + type;
+        }
+
+        // Initialize local media stream
+        async function initializeLocalStream() {
+            try {
+                updateStatus('Requesting camera and microphone access...', 'connecting');
+
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    },
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                localVideo.srcObject = localStream;
+                updateStatus('Camera and microphone ready', 'connected');
+
+                startCallBtn.disabled = false;
+                return true;
+            } catch (error) {
+                console.error('Error accessing media devices:', error);
+                updateStatus('Failed to access camera/microphone: ' + error.message, 'disconnected');
+
+                // Notify Java side about error
+                if (window.javaApp) {
+                    window.javaApp.onError('Media access failed: ' + error.message);
+                }
+                return false;
+            }
+        }
+
+        // Create peer connection
+        function createPeerConnection() {
+            updateStatus('Creating peer connection...', 'connecting');
+
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            // Add local stream tracks to peer connection
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+                console.log('Added local track:', track.kind);
+            });
+
+            // Handle remote stream
+            peerConnection.ontrack = (event) => {
+                console.log('Received remote track:', event.track.kind);
+                if (remoteVideo.srcObject !== event.streams[0]) {
+                    remoteVideo.srcObject = event.streams[0];
+                    updateStatus('Call connected', 'connected');
+                }
+            };
+
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    console.log('Sending ICE candidate');
+                    if (window.javaApp) {
+                        window.javaApp.sendIceCandidate(JSON.stringify(event.candidate));
+                    }
+                }
+            };
+
+            // Handle connection state changes
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Connection state:', peerConnection.connectionState);
+
+                switch (peerConnection.connectionState) {
+                    case 'connecting':
+                        updateStatus('Connecting...', 'connecting');
+                        break;
+                    case 'connected':
+                        updateStatus('Call connected', 'connected');
+                        break;
+                    case 'disconnected':
+                        updateStatus('Call disconnected', 'disconnected');
+                        break;
+                    case 'failed':
+                        updateStatus('Connection failed', 'disconnected');
+                        if (window.javaApp) {
+                            window.javaApp.onConnectionFailed();
+                        }
+                        break;
+                    case 'closed':
+                        updateStatus('Call ended', 'disconnected');
+                        break;
+                }
+            };
+
+            // Handle ICE connection state
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log('ICE connection state:', peerConnection.iceConnectionState);
+
+                if (peerConnection.iceConnectionState === 'failed') {
+                    // Try ICE restart
+                    peerConnection.restartIce();
+                }
+            };
+
+            return peerConnection;
+        }
+
+        // Start call as caller (create offer)
+        async function startCall() {
+            try {
+                if (!localStream) {
+                    await initializeLocalStream();
+                    if (!localStream) return;
+                }
+
+                updateStatus('Initiating call...', 'connecting');
+
+                createPeerConnection();
+
+                // Create and send offer
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                });
+
+                await peerConnection.setLocalDescription(offer);
+
+                console.log('Created offer, sending to server');
+
+                // Send offer to server via Java bridge
+                if (window.javaApp) {
+                    window.javaApp.sendOffer(JSON.stringify(offer));
+                }
+
+                // Enable controls
+                startCallBtn.disabled = true;
+                muteBtn.disabled = false;
+                videoToggleBtn.disabled = false;
+                endCallBtn.disabled = false;
+
+            } catch (error) {
+                console.error('Error starting call:', error);
+                updateStatus('Failed to start call: ' + error.message, 'disconnected');
+
+                if (window.javaApp) {
+                    window.javaApp.onError('Call start failed: ' + error.message);
+                }
+            }
+        }
+
+        // Receive offer from remote peer (as receiver)
+        async function receiveOffer(offerJson) {
+            try {
+                if (!localStream) {
+                    await initializeLocalStream();
+                    if (!localStream) return;
+                }
+
+                updateStatus('Incoming call...', 'connecting');
+
+                createPeerConnection();
+
+                const offer = JSON.parse(offerJson);
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+                // Create and send answer
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+
+                console.log('Created answer, sending to server');
+
+                // Send answer to server via Java bridge
+                if (window.javaApp) {
+                    window.javaApp.sendAnswer(JSON.stringify(answer));
+                }
+
+                // Enable controls
+                startCallBtn.disabled = true;
+                muteBtn.disabled = false;
+                videoToggleBtn.disabled = false;
+                endCallBtn.disabled = false;
+
+            } catch (error) {
+                console.error('Error receiving offer:', error);
+                updateStatus('Failed to answer call: ' + error.message, 'disconnected');
+
+                if (window.javaApp) {
+                    window.javaApp.onError('Answer failed: ' + error.message);
+                }
+            }
+        }
+
+        // Receive answer from remote peer (as caller)
+        async function receiveAnswer(answerJson) {
+            try {
+                const answer = JSON.parse(answerJson);
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                console.log('Remote description set successfully');
+            } catch (error) {
+                console.error('Error receiving answer:', error);
+                updateStatus('Failed to process answer: ' + error.message, 'disconnected');
+            }
+        }
+
+        // Receive ICE candidate from remote peer
+        async function receiveIceCandidate(candidateJson) {
+            try {
+                const candidate = JSON.parse(candidateJson);
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                console.log('Added ICE candidate');
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
+            }
+        }
+
+        // Toggle audio mute
+        function toggleMute() {
+            if (!localStream) return;
+
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                isAudioMuted = !isAudioMuted;
+                audioTrack.enabled = !isAudioMuted;
+                muteBtn.textContent = isAudioMuted ? 'Unmute Audio' : 'Mute Audio';
+                muteBtn.style.background = isAudioMuted ? '#dc2626' : '#f59e0b';
+            }
+        }
+
+        // Toggle video
+        function toggleVideo() {
+            if (!localStream) return;
+
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                isVideoEnabled = !isVideoEnabled;
+                videoTrack.enabled = isVideoEnabled;
+                videoToggleBtn.textContent = isVideoEnabled ? 'Stop Video' : 'Start Video';
+                videoToggleBtn.style.background = isVideoEnabled ? '#3b82f6' : '#dc2626';
+            }
+        }
+
+        // End call
+        function endCall() {
+            updateStatus('Ending call...', 'disconnected');
+
+            // Close peer connection
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            // Stop local stream
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+
+            // Clear video elements
+            localVideo.srcObject = null;
+            remoteVideo.srcObject = null;
+
+            // Reset controls
+            startCallBtn.disabled = false;
+            muteBtn.disabled = true;
+            videoToggleBtn.disabled = true;
+            endCallBtn.disabled = true;
+            muteBtn.textContent = 'Mute Audio';
+            videoToggleBtn.textContent = 'Stop Video';
+
+            updateStatus('Call ended', 'disconnected');
+
+            // Notify Java side
+            if (window.javaApp) {
+                window.javaApp.onCallEnded();
+            }
+        }
+
+        // Event listeners
+        startCallBtn.addEventListener('click', startCall);
+        muteBtn.addEventListener('click', toggleMute);
+        videoToggleBtn.addEventListener('click', toggleVideo);
+        endCallBtn.addEventListener('click', endCall);
+
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            updateStatus('Ready to call', '');
+            console.log('WebRTC page loaded');
+
+            // Notify Java side that page is ready
+            if (window.javaApp) {
+                window.javaApp.onPageReady();
+            }
+        });
+
+        // Expose functions to Java bridge
+        window.webrtc = {
+            receiveOffer: receiveOffer,
+            receiveAnswer: receiveAnswer,
+            receiveIceCandidate: receiveIceCandidate,
+            startCall: startCall,
+            endCall: endCall,
+            initializeLocalStream: initializeLocalStream
+        };
+    </script>
+</body>
+</html>
