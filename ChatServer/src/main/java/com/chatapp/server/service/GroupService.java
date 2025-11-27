@@ -8,7 +8,9 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class GroupService {
     private static final Logger logger = LoggerFactory.getLogger(GroupService.class);
@@ -131,22 +133,73 @@ public class GroupService {
      */
     public List<Group> getUserGroups(int userId) {
         List<Group> groups = new ArrayList<>();
-        String sql = "SELECT g.* FROM chat_groups g " +
-                     "JOIN group_members gm ON g.group_id = gm.group_id " +
-                     "WHERE gm.user_id = ? " +
-                     "ORDER BY g.created_at DESC";
+        // Step 1: Get all groups for the user (simple query, no joins)
+        String groupSql = "SELECT DISTINCT g.* FROM chat_groups g " +
+                          "JOIN group_members gm ON g.group_id = gm.group_id " +
+                          "WHERE gm.user_id = ? " +
+                          "ORDER BY g.created_at DESC";
+
+        logger.info("Getting groups list for user {}", userId);
 
         try (Connection conn = dbManager.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(groupSql)) {
 
             pstmt.setInt(1, userId);
             ResultSet rs = pstmt.executeQuery();
 
+            int count = 0;
+            // Collect all group IDs first
+            List<Integer> groupIds = new ArrayList<>();
+
             while (rs.next()) {
-                Group group = extractGroupFromResultSet(rs);
-                group.setMemberIds(getGroupMemberIds(group.getGroupId()));
-                groups.add(group);
+                try {
+                    Group group = extractGroupFromResultSet(rs);
+                    groups.add(group);
+                    groupIds.add(group.getGroupId());
+                    count++;
+                    logger.debug("Added group: {} ({})", group.getGroupName(), group.getGroupId());
+                } catch (Exception e) {
+                    logger.error("Error extracting group data from result set", e);
+                }
             }
+
+            logger.info("Successfully retrieved {} groups for user {}", count, userId);
+
+            if (count == 0) {
+                logger.warn("No groups found for user {}. Check group_members table in database.", userId);
+                return groups;
+            }
+
+            // Step 2: Load all member IDs for all groups in one query
+            if (!groupIds.isEmpty()) {
+                String placeholders = String.join(",", groupIds.stream().map(id -> "?").toArray(String[]::new));
+                String memberSql = "SELECT group_id, user_id FROM group_members WHERE group_id IN (" + placeholders + ")";
+
+                try (PreparedStatement memberPstmt = conn.prepareStatement(memberSql)) {
+                    for (int i = 0; i < groupIds.size(); i++) {
+                        memberPstmt.setInt(i + 1, groupIds.get(i));
+                    }
+
+                    ResultSet memberRs = memberPstmt.executeQuery();
+
+                    // Create a map of groupId -> list of member IDs
+                    Map<Integer, List<Integer>> groupMembersMap = new HashMap<>();
+                    while (memberRs.next()) {
+                        int groupId = memberRs.getInt("group_id");
+                        int memberId = memberRs.getInt("user_id");
+
+                        groupMembersMap.computeIfAbsent(groupId, k -> new ArrayList<>()).add(memberId);
+                    }
+
+                    // Populate member IDs for each group
+                    for (Group group : groups) {
+                        List<Integer> memberIds = groupMembersMap.getOrDefault(group.getGroupId(), new ArrayList<>());
+                        group.setMemberIds(memberIds);
+                        logger.debug("Group {} has {} members", group.getGroupName(), memberIds.size());
+                    }
+                }
+            }
+
         } catch (SQLException e) {
             logger.error("Error getting groups for user {}", userId, e);
         }
