@@ -14,7 +14,10 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
+import javafx.scene.web.WebView;
+import javafx.scene.web.WebEngine;
 import javafx.stage.Stage;
+import netscape.javascript.JSObject;
 
 public class CallController {
     // Voice call UI
@@ -60,6 +63,11 @@ public class CallController {
     private boolean isMuted = false;
     private boolean isCameraOn = true;
 
+    // WebRTC P2P components
+    private WebView webView;
+    private WebEngine webEngine;
+    private boolean useWebRTC = true; // Use WebRTC P2P by default for video calls
+
     public CallController() {
         this.networkManager = NetworkManager.getInstance();
         this.gson = new Gson();
@@ -70,14 +78,219 @@ public class CallController {
         callDurationLabel.setText("00:00");
         videoCallDurationLabel.setText("00:00");
 
-        // Initialize webcam manager
+        // Initialize WebRTC WebView for P2P video calls
+        if (useWebRTC) {
+            initializeWebRTC();
+        } else {
+            // Fallback to old webcam manager approach
+            try {
+                webcamManager = new WebcamManager();
+                System.out.println("WebcamManager initialized successfully");
+            } catch (Exception e) {
+                System.err.println("Failed to initialize WebcamManager: " + e.getMessage());
+                e.printStackTrace();
+                webcamManager = null;
+            }
+        }
+    }
+
+    /**
+     * Initialize WebRTC WebView for P2P video calls
+     */
+    private void initializeWebRTC() {
         try {
-            webcamManager = new WebcamManager();
-            System.out.println("WebcamManager initialized successfully");
+            webView = new WebView();
+            webEngine = webView.getEngine();
+
+            // Enable JavaScript
+            webEngine.setJavaScriptEnabled(true);
+
+            // Load WebRTC page
+            String webrtcPage = getClass().getResource("/webrtc-call.html").toExternalForm();
+            System.out.println("Loading WebRTC page: " + webrtcPage);
+
+            // Set JavaScript bridge after page loads
+            webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+                if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
+                    System.out.println("WebRTC page loaded successfully");
+
+                    // Set Java bridge object
+                    JSObject window = (JSObject) webEngine.executeScript("window");
+                    window.setMember("javaApp", new WebRTCBridge());
+
+                    System.out.println("JavaScript bridge established");
+                }
+            });
+
+            webEngine.load(webrtcPage);
+
+            // Setup WebRTC signaling notification handlers
+            setupWebRTCNotificationHandlers();
+
+            System.out.println("WebRTC initialized successfully");
         } catch (Exception e) {
-            System.err.println("Failed to initialize WebcamManager: " + e.getMessage());
+            System.err.println("Failed to initialize WebRTC: " + e.getMessage());
             e.printStackTrace();
-            webcamManager = null;
+            useWebRTC = false;
+
+            // Fallback to old approach
+            try {
+                webcamManager = new WebcamManager();
+                System.out.println("Fallback to WebcamManager");
+            } catch (Exception ex) {
+                System.err.println("Failed to initialize WebcamManager: " + ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Setup handlers for WebRTC signaling notifications from server
+     */
+    private void setupWebRTCNotificationHandlers() {
+        // Handle WebRTC Offer (as receiver)
+        networkManager.setNotificationHandler(Protocol.NOTIFY_WEBRTC_OFFER, protocol -> {
+            JsonObject data = protocol.getData().getAsJsonObject("data");
+            String sdp = data.get("sdp").getAsString();
+
+            System.out.println("Received WebRTC offer from server");
+
+            Platform.runLater(() -> {
+                try {
+                    // Call JavaScript function to receive offer
+                    webEngine.executeScript("window.webrtc.receiveOffer('" + sdp.replace("'", "\\'") + "')");
+                } catch (Exception e) {
+                    System.err.println("Error passing offer to JavaScript: " + e.getMessage());
+                }
+            });
+        });
+
+        // Handle WebRTC Answer (as caller)
+        networkManager.setNotificationHandler(Protocol.NOTIFY_WEBRTC_ANSWER, protocol -> {
+            JsonObject data = protocol.getData().getAsJsonObject("data");
+            String sdp = data.get("sdp").getAsString();
+
+            System.out.println("Received WebRTC answer from server");
+
+            Platform.runLater(() -> {
+                try {
+                    // Call JavaScript function to receive answer
+                    webEngine.executeScript("window.webrtc.receiveAnswer('" + sdp.replace("'", "\\'") + "')");
+                } catch (Exception e) {
+                    System.err.println("Error passing answer to JavaScript: " + e.getMessage());
+                }
+            });
+        });
+
+        // Handle ICE Candidate
+        networkManager.setNotificationHandler(Protocol.NOTIFY_WEBRTC_ICE_CANDIDATE, protocol -> {
+            JsonObject data = protocol.getData().getAsJsonObject("data");
+            String candidate = data.get("candidate").getAsString();
+
+            System.out.println("Received ICE candidate from server");
+
+            Platform.runLater(() -> {
+                try {
+                    // Call JavaScript function to receive ICE candidate
+                    webEngine.executeScript("window.webrtc.receiveIceCandidate('" + candidate.replace("'", "\\'") + "')");
+                } catch (Exception e) {
+                    System.err.println("Error passing ICE candidate to JavaScript: " + e.getMessage());
+                }
+            });
+        });
+    }
+
+    /**
+     * JavaScript Bridge for WebRTC communication
+     */
+    public class WebRTCBridge {
+        /**
+         * Send WebRTC offer to server (called from JavaScript)
+         */
+        public void sendOffer(String offerJson) {
+            System.out.println("Sending WebRTC offer to server");
+
+            JsonObject data = new JsonObject();
+            data.addProperty("receiverId", otherUser.getUserId());
+            data.addProperty("sdp", offerJson);
+
+            networkManager.sendRequest(Protocol.ACTION_WEBRTC_OFFER, data, response -> {
+                if (response.isSuccess()) {
+                    System.out.println("WebRTC offer sent successfully");
+                } else {
+                    System.err.println("Failed to send WebRTC offer: " + response.getMessage());
+                }
+            });
+        }
+
+        /**
+         * Send WebRTC answer to server (called from JavaScript)
+         */
+        public void sendAnswer(String answerJson) {
+            System.out.println("Sending WebRTC answer to server");
+
+            JsonObject data = new JsonObject();
+            data.addProperty("callerId", otherUser.getUserId());
+            data.addProperty("sdp", answerJson);
+
+            networkManager.sendRequest(Protocol.ACTION_WEBRTC_ANSWER, data, response -> {
+                if (response.isSuccess()) {
+                    System.out.println("WebRTC answer sent successfully");
+                } else {
+                    System.err.println("Failed to send WebRTC answer: " + response.getMessage());
+                }
+            });
+        }
+
+        /**
+         * Send ICE candidate to server (called from JavaScript)
+         */
+        public void sendIceCandidate(String candidateJson) {
+            JsonObject data = new JsonObject();
+            data.addProperty("targetUserId", otherUser.getUserId());
+            data.addProperty("candidate", candidateJson);
+
+            networkManager.sendRequest(Protocol.ACTION_WEBRTC_ICE_CANDIDATE, data, response -> {
+                if (!response.isSuccess()) {
+                    System.err.println("Failed to send ICE candidate: " + response.getMessage());
+                }
+            });
+        }
+
+        /**
+         * Called when WebRTC page is ready
+         */
+        public void onPageReady() {
+            System.out.println("WebRTC page is ready");
+        }
+
+        /**
+         * Called when call ends (from JavaScript)
+         */
+        public void onCallEnded() {
+            System.out.println("Call ended from WebRTC");
+            Platform.runLater(() -> {
+                handleEndCall();
+            });
+        }
+
+        /**
+         * Called when connection fails (from JavaScript)
+         */
+        public void onConnectionFailed() {
+            System.err.println("WebRTC connection failed");
+            Platform.runLater(() -> {
+                updateCallStatus("Connection failed");
+            });
+        }
+
+        /**
+         * Called on WebRTC errors (from JavaScript)
+         */
+        public void onError(String errorMessage) {
+            System.err.println("WebRTC error: " + errorMessage);
+            Platform.runLater(() -> {
+                updateCallStatus("Error: " + errorMessage);
+            });
         }
     }
 

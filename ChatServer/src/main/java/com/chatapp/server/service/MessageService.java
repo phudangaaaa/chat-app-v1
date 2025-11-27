@@ -274,11 +274,27 @@ public class MessageService {
 
         message.setRead(rs.getBoolean("is_read"));
         message.setSentAt(rs.getTimestamp("sent_at"));
-        message.setSenderName(rs.getString("sender_name"));
 
-        String receiverName = rs.getString("receiver_name");
-        if (receiverName != null) {
-            message.setReceiverName(receiverName);
+        // Safely get sender_name (exists in both private and group message queries)
+        try {
+            String senderName = rs.getString("sender_name");
+            if (senderName != null) {
+                message.setSenderName(senderName);
+            }
+        } catch (SQLException e) {
+            // Column doesn't exist, skip
+            logger.debug("sender_name column not found in result set");
+        }
+
+        // Safely get receiver_name (only exists in private message queries)
+        try {
+            String receiverName = rs.getString("receiver_name");
+            if (receiverName != null) {
+                message.setReceiverName(receiverName);
+            }
+        } catch (SQLException e) {
+            // Column doesn't exist (e.g., in group message queries), skip
+            logger.debug("receiver_name column not found in result set");
         }
 
         return message;

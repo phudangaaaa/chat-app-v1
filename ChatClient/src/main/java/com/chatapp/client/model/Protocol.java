@@ -52,6 +52,11 @@ public class Protocol {
     public static final String ACTION_END_CALL = "END_CALL";
     public static final String ACTION_CALL_SIGNAL = "CALL_SIGNAL";
 
+    // WebRTC Signaling Actions (P2P)
+    public static final String ACTION_WEBRTC_OFFER = "WEBRTC_OFFER";
+    public static final String ACTION_WEBRTC_ANSWER = "WEBRTC_ANSWER";
+    public static final String ACTION_WEBRTC_ICE_CANDIDATE = "WEBRTC_ICE_CANDIDATE";
+
     // Notifications
     public static final String NOTIFY_USER_ONLINE = "NOTIFY_USER_ONLINE";
     public static final String NOTIFY_USER_OFFLINE = "NOTIFY_USER_OFFLINE";
@@ -61,6 +66,11 @@ public class Protocol {
     public static final String NOTIFY_CALL_ACCEPTED = "NOTIFY_CALL_ACCEPTED";
     public static final String NOTIFY_CALL_REJECTED = "NOTIFY_CALL_REJECTED";
     public static final String NOTIFY_CALL_ENDED = "NOTIFY_CALL_ENDED";
+
+    // WebRTC Signaling Notifications (P2P)
+    public static final String NOTIFY_WEBRTC_OFFER = "NOTIFY_WEBRTC_OFFER";
+    public static final String NOTIFY_WEBRTC_ANSWER = "NOTIFY_WEBRTC_ANSWER";
+    public static final String NOTIFY_WEBRTC_ICE_CANDIDATE = "NOTIFY_WEBRTC_ICE_CANDIDATE";
 
     public Protocol() {
         this.data = new JsonObject();
