@@ -36,6 +36,9 @@ public class MainController {
     @FXML private Button searchButton;
     @FXML private Button logoutButton;
     @FXML private TabPane conversationsTabPane;
+    @FXML private Button refreshStatusButton;
+    @FXML private Button refreshFriendsButton;
+    @FXML private Button refreshGroupsButton;
 
     // New UI components for chat panel
     @FXML private StackPane chatContainer;
@@ -486,5 +489,41 @@ public class MainController {
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
+    }
+
+    /**
+     * Refresh friends list
+     */
+    @FXML
+    private void handleRefreshFriends() {
+        System.out.println("Refreshing friends list...");
+        loadFriends();
+    }
+
+    /**
+     * Refresh groups list
+     */
+    @FXML
+    private void handleRefreshGroups() {
+        System.out.println("Refreshing groups list...");
+        loadGroups();
+    }
+
+    /**
+     * Refresh status from current session
+     */
+    @FXML
+    private void handleRefreshStatus() {
+        System.out.println("Refreshing user status display...");
+        User currentUser = SessionManager.getInstance().getCurrentUser();
+        if (currentUser != null) {
+            Platform.runLater(() -> {
+                userNameLabel.setText(currentUser.getFullName());
+                userStatusLabel.setText(currentUser.getUserStatus().toString());
+                updateStatusDotColor(currentUser.getUserStatus().toString());
+                statusComboBox.setValue(currentUser.getUserStatus().toString());
+                System.out.println("Status display refreshed: " + currentUser.getUserStatus());
+            });
+        }
     }
 }
