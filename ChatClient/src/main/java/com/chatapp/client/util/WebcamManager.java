@@ -136,4 +136,11 @@ public class WebcamManager {
         }
         return null;
     }
+
+    /**
+     * Capture a single frame (alias for getCurrentFrame)
+     */
+    public BufferedImage captureFrame() {
+        return getCurrentFrame();
+    }
 }

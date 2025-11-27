@@ -1,31 +1,34 @@
 package com.chatapp.client.util;
 
+import com.chatapp.client.model.Protocol;
+import com.chatapp.client.service.NetworkManager;
+import com.google.gson.JsonObject;
+import javafx.application.Platform;
 import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
 
+import javax.imageio.ImageIO;
 import javax.sound.sampled.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.net.Socket;
+import java.util.Base64;
 
 /**
  * Media streaming utility for audio/video calls
+ * Streams video/audio through server relay
  */
 public class MediaStreamManager {
-    private static final int VIDEO_PORT_BASE = 9000;
-    private static final int AUDIO_PORT_BASE = 9100;
+    private final NetworkManager networkManager;
+    private final WebcamManager webcamManager;
+    private final int callId;
 
-    private Socket videoSocket;
-    private Socket audioSocket;
     private Thread videoSendThread;
     private Thread audioSendThread;
-    private Thread videoReceiveThread;
     private Thread audioReceiveThread;
 
     private volatile boolean streaming = false;
-    private String serverHost;
-    private int callId;
 
     // Audio format
     private static final AudioFormat AUDIO_FORMAT = new AudioFormat(
@@ -38,58 +41,114 @@ public class MediaStreamManager {
         false  // Big endian
     );
 
-    public MediaStreamManager(String serverHost, int callId) {
-        this.serverHost = serverHost;
+    public MediaStreamManager(int callId, WebcamManager webcamManager) {
+        this.networkManager = NetworkManager.getInstance();
         this.callId = callId;
+        this.webcamManager = webcamManager;
     }
 
     /**
      * Start video streaming with webcam
      */
-    public void startVideoStream(VideoStreamCallback callback) {
+    public void startVideoStream(int otherUserId, ImageView remoteVideoView) {
         streaming = true;
 
+        // Setup receiver for incoming video frames
+        networkManager.setNotificationHandler("VIDEO_FRAME", protocol -> {
+            try {
+                String base64Frame = protocol.getData().get("frame").getAsString();
+                byte[] imageBytes = Base64.getDecoder().decode(base64Frame);
+
+                ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes);
+                BufferedImage bufferedImage = ImageIO.read(bis);
+
+                if (bufferedImage != null) {
+                    Image fxImage = convertToFxImage(bufferedImage);
+                    Platform.runLater(() -> {
+                        if (remoteVideoView != null) {
+                            remoteVideoView.setImage(fxImage);
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                System.err.println("Error receiving video frame: " + e.getMessage());
+            }
+        });
+
+        // Send video frames from webcam
         videoSendThread = new Thread(() -> {
+            System.out.println("Video streaming started...");
+
             try {
-                // In a real implementation, you would:
-                // 1. Initialize webcam using webcam-capture library
-                // 2. Capture frames
-                // 3. Compress frames (JPEG)
-                // 4. Send to peer via socket
+                while (streaming && !Thread.interrupted()) {
+                    // Get frame from webcam
+                    if (webcamManager != null && webcamManager.isWebcamAvailable()) {
+                        BufferedImage frame = webcamManager.captureFrame();
 
-                // Placeholder for actual implementation
-                System.out.println("Video streaming started...");
+                        if (frame != null) {
+                            // Compress to JPEG
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            ImageIO.write(frame, "jpg", baos);
+                            byte[] imageBytes = baos.toByteArray();
+                            String base64Frame = Base64.getEncoder().encodeToString(imageBytes);
 
+                            // Send to other user via server
+                            JsonObject data = new JsonObject();
+                            data.addProperty("receiverId", otherUserId);
+                            data.addProperty("callId", callId);
+                            data.addProperty("type", "VIDEO_FRAME");
+                            data.addProperty("frame", base64Frame);
+
+                            networkManager.sendNotification(Protocol.ACTION_CALL_SIGNAL, data);
+                        }
+                    }
+
+                    // Limit to ~15 FPS to reduce bandwidth
+                    Thread.sleep(66);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             } catch (Exception e) {
-                e.printStackTrace();
+                System.err.println("Error in video send thread: " + e.getMessage());
             }
+
+            System.out.println("Video streaming stopped");
         });
 
-        videoReceiveThread = new Thread(() -> {
-            try {
-                // In a real implementation, you would:
-                // 1. Receive compressed frames from socket
-                // 2. Decompress frames
-                // 3. Display in UI via callback
-
-                System.out.println("Video receiving started...");
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-
+        videoSendThread.setDaemon(true);
         videoSendThread.start();
-        videoReceiveThread.start();
     }
 
     /**
      * Start audio streaming with microphone
      */
-    public void startAudioStream() {
+    public void startAudioStream(int otherUserId) {
         streaming = true;
 
+        // Setup receiver for incoming audio
+        networkManager.setNotificationHandler("AUDIO_CHUNK", protocol -> {
+            try {
+                String base64Audio = protocol.getData().get("audio").getAsString();
+                byte[] audioData = Base64.getDecoder().decode(base64Audio);
+
+                // Play audio
+                DataLine.Info speakerInfo = new DataLine.Info(SourceDataLine.class, AUDIO_FORMAT);
+                SourceDataLine speaker = (SourceDataLine) AudioSystem.getLine(speakerInfo);
+                speaker.open(AUDIO_FORMAT);
+                speaker.start();
+                speaker.write(audioData, 0, audioData.length);
+                speaker.drain();
+                speaker.close();
+
+            } catch (Exception e) {
+                System.err.println("Error receiving audio: " + e.getMessage());
+            }
+        });
+
+        // Send audio from microphone
         audioSendThread = new Thread(() -> {
+            System.out.println("Audio streaming started...");
+
             try {
                 DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, AUDIO_FORMAT);
                 TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
@@ -98,11 +157,19 @@ public class MediaStreamManager {
 
                 byte[] buffer = new byte[1024];
 
-                while (streaming) {
+                while (streaming && !Thread.interrupted()) {
                     int bytesRead = microphone.read(buffer, 0, buffer.length);
                     if (bytesRead > 0) {
-                        // In real implementation: send to peer via socket
-                        // For now, just capture audio
+                        // Encode and send
+                        String base64Audio = Base64.getEncoder().encodeToString(buffer);
+
+                        JsonObject data = new JsonObject();
+                        data.addProperty("receiverId", otherUserId);
+                        data.addProperty("callId", callId);
+                        data.addProperty("type", "AUDIO_CHUNK");
+                        data.addProperty("audio", base64Audio);
+
+                        networkManager.sendNotification(Protocol.ACTION_CALL_SIGNAL, data);
                     }
                 }
 
@@ -110,34 +177,14 @@ public class MediaStreamManager {
                 microphone.close();
 
             } catch (Exception e) {
-                e.printStackTrace();
+                System.err.println("Error in audio send thread: " + e.getMessage());
             }
+
+            System.out.println("Audio streaming stopped");
         });
 
-        audioReceiveThread = new Thread(() -> {
-            try {
-                DataLine.Info speakerInfo = new DataLine.Info(SourceDataLine.class, AUDIO_FORMAT);
-                SourceDataLine speaker = (SourceDataLine) AudioSystem.getLine(speakerInfo);
-                speaker.open(AUDIO_FORMAT);
-                speaker.start();
-
-                byte[] buffer = new byte[1024];
-
-                while (streaming) {
-                    // In real implementation: receive audio from socket and play
-                    // For now, just prepare speaker
-                }
-
-                speaker.stop();
-                speaker.close();
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        });
-
+        audioSendThread.setDaemon(true);
         audioSendThread.start();
-        audioReceiveThread.start();
     }
 
     /**
@@ -147,21 +194,17 @@ public class MediaStreamManager {
         streaming = false;
 
         try {
-            if (videoSocket != null) videoSocket.close();
-            if (audioSocket != null) audioSocket.close();
-
             if (videoSendThread != null) videoSendThread.interrupt();
-            if (videoReceiveThread != null) videoReceiveThread.interrupt();
             if (audioSendThread != null) audioSendThread.interrupt();
             if (audioReceiveThread != null) audioReceiveThread.interrupt();
 
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+            // Remove handlers
+            networkManager.removeNotificationHandler("VIDEO_FRAME");
+            networkManager.removeNotificationHandler("AUDIO_CHUNK");
 
-    public interface VideoStreamCallback {
-        void onFrameReceived(Image frame);
+        } catch (Exception e) {
+            System.err.println("Error stopping stream: " + e.getMessage());
+        }
     }
 
     /**

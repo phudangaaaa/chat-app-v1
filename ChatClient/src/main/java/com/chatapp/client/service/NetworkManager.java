@@ -162,6 +162,20 @@ public class NetworkManager {
         notificationHandlers.remove(notificationType);
     }
 
+    /**
+     * Send a notification/signal without expecting response
+     */
+    public void sendNotification(String action, JsonObject data) {
+        if (!connected) {
+            logger.error("Not connected to server");
+            return;
+        }
+
+        Protocol notification = new Protocol(action, data);
+        out.println(notification.toJson());
+        logger.debug("Sent notification: {}", action);
+    }
+
     public boolean isConnected() {
         return connected && socket != null && socket.isConnected();
     }

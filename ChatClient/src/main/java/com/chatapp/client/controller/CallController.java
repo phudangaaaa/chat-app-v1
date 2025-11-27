@@ -245,6 +245,9 @@ public class CallController {
     private void startMediaStream() {
         boolean isVideoCall = callInfo.getCallType() == CallInfo.CallType.VIDEO;
 
+        // Initialize media stream manager
+        mediaStreamManager = new MediaStreamManager(callInfo.getCallId(), webcamManager);
+
         if (isVideoCall) {
             // Switch to video UI
             voiceContainer.setVisible(false);
@@ -258,30 +261,33 @@ public class CallController {
             videoCallerNameLabel.setText(otherUser.getFullName());
             videoCallStatusLabel.setText("Connected");
 
-            // Start webcam capture
+            // Start local webcam display and video streaming
             if (webcamManager != null && webcamManager.isWebcamAvailable()) {
                 try {
                     webcamManager.startCapture(localVideoView);
-                    System.out.println("Webcam capture started");
+                    System.out.println("Local webcam capture started");
+
+                    // Start video streaming to other user
+                    mediaStreamManager.startVideoStream(otherUser.getUserId(), remoteVideoView);
+                    System.out.println("Video streaming started to user " + otherUser.getUserId());
+
                 } catch (Exception e) {
-                    System.err.println("Failed to start webcam: " + e.getMessage());
+                    System.err.println("Failed to start video stream: " + e.getMessage());
                     e.printStackTrace();
                 }
             } else {
                 System.err.println("No webcam available or WebcamManager not initialized!");
             }
-
-            // Initialize media stream manager (for future P2P streaming)
-            // mediaStreamManager = new MediaStreamManager("localhost", callInfo.getCallId());
-            // mediaStreamManager.startVideoStream(frame -> {
-            //     Platform.runLater(() -> remoteVideoView.setImage(frame));
-            // });
         }
 
-        // Start audio streaming
-        // if (mediaStreamManager != null) {
-        //     mediaStreamManager.startAudioStream();
-        // }
+        // Start audio streaming for both video and voice calls
+        try {
+            mediaStreamManager.startAudioStream(otherUser.getUserId());
+            System.out.println("Audio streaming started");
+        } catch (Exception e) {
+            System.err.println("Failed to start audio stream: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     /**

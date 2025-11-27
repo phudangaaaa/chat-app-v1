@@ -570,9 +570,16 @@ public class ClientHandler implements Runnable {
     }
 
     private void handleCallSignal(JsonObject data) {
-        // Forward WebRTC signaling data to the other peer
+        // Forward media/signaling data to the other peer
         int receiverId = data.get("receiverId").getAsInt();
-        notifyUser(receiverId, Protocol.ACTION_CALL_SIGNAL, data);
+
+        // Extract signal type (VIDEO_FRAME, AUDIO_CHUNK, etc.)
+        String signalType = data.has("type") ? data.get("type").getAsString() : Protocol.ACTION_CALL_SIGNAL;
+
+        // Forward with appropriate notification type
+        notifyUser(receiverId, signalType, data);
+
+        logger.debug("Forwarded {} signal from {} to {}", signalType, currentUser != null ? currentUser.getUserId() : "unknown", receiverId);
     }
 
     private void notifyUser(int userId, String notificationType, Object data) {
