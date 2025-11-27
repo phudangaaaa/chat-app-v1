@@ -15,28 +15,41 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 
 public class MainController {
     @FXML private Label userNameLabel;
     @FXML private Label userStatusLabel;
+    @FXML private Label statusDot;
     @FXML private ComboBox<String> statusComboBox;
     @FXML private ListView<User> friendListView;
     @FXML private ListView<Group> groupListView;
     @FXML private TextField searchField;
     @FXML private Button searchButton;
     @FXML private Button logoutButton;
-    @FXML private TabPane mainTabPane;
+    @FXML private TabPane conversationsTabPane;
+
+    // New UI components for chat panel
+    @FXML private StackPane chatContainer;
+    @FXML private VBox welcomeScreen;
+    @FXML private BorderPane chatArea;
+    @FXML private SplitPane mainSplitPane;
 
     private final NetworkManager networkManager;
     private final Gson gson;
     private final ObservableList<User> friendsList;
     private final ObservableList<Group> groupsList;
+
+    // Track current chat
+    private ChatController currentChatController;
 
     public MainController() {
         this.networkManager = NetworkManager.getInstance();
@@ -62,6 +75,9 @@ public class MainController {
         User currentUser = SessionManager.getInstance().getCurrentUser();
         userNameLabel.setText(currentUser.getFullName());
         userStatusLabel.setText(currentUser.getUserStatus().toString());
+
+        // Set initial status dot color
+        updateStatusDotColor(currentUser.getUserStatus().toString());
     }
 
     private void setupStatusComboBox() {
@@ -332,9 +348,36 @@ public class MainController {
 
         networkManager.sendRequest(Protocol.ACTION_UPDATE_STATUS, data, response -> {
             if (response.isSuccess()) {
-                userStatusLabel.setText(newStatus);
+                Platform.runLater(() -> {
+                    userStatusLabel.setText(newStatus);
+                    updateStatusDotColor(newStatus);
+                });
             }
         });
+    }
+
+    /**
+     * Update status dot color based on status
+     */
+    private void updateStatusDotColor(String status) {
+        switch (status) {
+            case "ONLINE":
+                statusDot.setStyle("-fx-text-fill: #2ecc71; -fx-font-size: 10;");
+                userStatusLabel.setStyle("-fx-text-fill: #2ecc71; -fx-font-size: 11;");
+                break;
+            case "AWAY":
+                statusDot.setStyle("-fx-text-fill: #f39c12; -fx-font-size: 10;");
+                userStatusLabel.setStyle("-fx-text-fill: #f39c12; -fx-font-size: 11;");
+                break;
+            case "BUSY":
+                statusDot.setStyle("-fx-text-fill: #e74c3c; -fx-font-size: 10;");
+                userStatusLabel.setStyle("-fx-text-fill: #e74c3c; -fx-font-size: 11;");
+                break;
+            case "OFFLINE":
+                statusDot.setStyle("-fx-text-fill: #95a5a6; -fx-font-size: 10;");
+                userStatusLabel.setStyle("-fx-text-fill: #95a5a6; -fx-font-size: 11;");
+                break;
+        }
     }
 
     @FXML
@@ -384,27 +427,45 @@ public class MainController {
         });
     }
 
+    /**
+     * Load chat into the right panel (Zalo/Messenger style)
+     */
     private void openChatWindow(User friend, Group group) {
         try {
+            // Load Chat.fxml
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/Chat.fxml"));
-            Parent root = loader.load();
+            Parent chatContent = loader.load();
 
+            // Get controller and initialize
             ChatController controller = loader.getController();
+            currentChatController = controller;
+
             if (friend != null) {
                 controller.initializePrivateChat(friend);
+                System.out.println("Loading chat with: " + friend.getFullName());
             } else if (group != null) {
                 controller.initializeGroupChat(group);
+                System.out.println("Loading group chat: " + group.getGroupName());
             }
 
-            Stage chatStage = new Stage();
-            chatStage.setTitle(friend != null ? "Chat with " + friend.getFullName() : "Group: " + group.getGroupName());
-            chatStage.setScene(new Scene(root, 600, 500));
-            chatStage.initModality(Modality.NONE);
-            chatStage.show();
+            // Hide welcome screen, show chat area
+            welcomeScreen.setVisible(false);
+            welcomeScreen.setManaged(false);
 
+            chatArea.setVisible(true);
+            chatArea.setManaged(true);
+
+            // Load chat content into center of chatArea
+            chatArea.setCenter(chatContent);
+
+            System.out.println("Chat loaded successfully into panel");
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            showAlert("Error", "Failed to load chat: " + e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
-            showAlert("Error", "Failed to open chat window");
+            showAlert("Error", "Unexpected error loading chat");
         }
     }
 

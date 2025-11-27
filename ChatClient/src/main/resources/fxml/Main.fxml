@@ -8,78 +8,81 @@
 <BorderPane xmlns="http://javafx.com/javafx/19"
            xmlns:fx="http://javafx.com/fxml/1"
            fx:controller="com.chatapp.client.controller.MainController"
-           prefHeight="600.0" prefWidth="900.0">
+           prefHeight="700.0" prefWidth="1200.0"
+           style="-fx-background-color: #f0f2f5;">
 
-    <!-- Left Side - User Profile and Controls -->
-    <left>
-        <VBox spacing="10" style="-fx-background-color: #2c3e50; -fx-padding: 15;">
-            <VBox.margin>
-                <Insets />
-            </VBox.margin>
-
-            <!-- User Profile Section -->
-            <VBox spacing="5" style="-fx-background-color: #34495e; -fx-padding: 15; -fx-background-radius: 5;">
-                <Label fx:id="userNameLabel" text="User Name" style="-fx-text-fill: white; -fx-font-size: 16; -fx-font-weight: bold;" />
-                <Label fx:id="userStatusLabel" text="ONLINE" style="-fx-text-fill: #2ecc71; -fx-font-size: 12;" />
-
-                <HBox spacing="5" alignment="CENTER_LEFT">
-                    <VBox.margin>
-                        <Insets top="10" />
-                    </VBox.margin>
-                    <Label text="Status:" style="-fx-text-fill: white;" />
-                    <ComboBox fx:id="statusComboBox" prefWidth="120" />
-                </HBox>
-            </VBox>
-
-            <!-- Search Section -->
-            <VBox spacing="5">
-                <VBox.margin>
-                    <Insets top="10" />
-                </VBox.margin>
-                <Label text="Search Users:" style="-fx-text-fill: white; -fx-font-weight: bold;" />
-                <HBox spacing="5">
-                    <TextField fx:id="searchField" promptText="Search..." HBox.hgrow="ALWAYS" />
-                    <Button fx:id="searchButton" text="Search" onAction="#handleSearch" />
-                </HBox>
-            </VBox>
-
-            <!-- Actions -->
-            <VBox spacing="10">
-                <VBox.margin>
-                    <Insets top="20" />
-                </VBox.margin>
-                <Button text="Create Group" onAction="#handleCreateGroup" maxWidth="Infinity"
-                       style="-fx-background-color: #3498db; -fx-text-fill: white;" />
-                <Button fx:id="logoutButton" text="Logout" onAction="#handleLogout" maxWidth="Infinity"
-                       style="-fx-background-color: #e74c3c; -fx-text-fill: white;" />
-            </VBox>
-
-            <Region VBox.vgrow="ALWAYS" />
-        </VBox>
-    </left>
-
-    <!-- Center - Friend List and Groups -->
+    <!-- Main Content: SplitPane (Conversations + Chat) -->
     <center>
-        <TabPane fx:id="mainTabPane" tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
-            <!-- Friends Tab -->
-            <Tab text="Friends">
-                <VBox spacing="10" style="-fx-padding: 10;">
-                    <Label text="Friends List" style="-fx-font-size: 18; -fx-font-weight: bold;" />
-                    <Separator />
-                    <ListView fx:id="friendListView" VBox.vgrow="ALWAYS" />
-                    <Label text="Double-click to chat" style="-fx-font-size: 11; -fx-text-fill: gray;" />
-                </VBox>
-            </Tab>
+        <SplitPane fx:id="mainSplitPane" dividerPositions="0.3">
 
-            <!-- Groups Tab -->
-            <Tab text="Groups">
-                <VBox spacing="10" style="-fx-padding: 10;">
-                    <Label text="My Groups" style="-fx-font-size: 18; -fx-font-weight: bold;" />
-                    <Separator />
-                    <ListView fx:id="groupListView" VBox.vgrow="ALWAYS" />
-                    <Label text="Double-click to open group chat" style="-fx-font-size: 11; -fx-text-fill: gray;" />
+            <!-- LEFT PANEL: Conversations List -->
+            <VBox spacing="0" style="-fx-background-color: white; -fx-border-color: #e4e6eb; -fx-border-width: 0 1 0 0;">
+
+                <!-- Header with User Profile -->
+                <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-background-color: white; -fx-padding: 15; -fx-border-color: #e4e6eb; -fx-border-width: 0 0 1 0;">
+                    <!-- User Avatar Icon -->
+                    <Label text="👤" style="-fx-font-size: 32; -fx-text-fill: #1877f2;" />
+
+                    <!-- User Info -->
+                    <VBox spacing="2" HBox.hgrow="ALWAYS">
+                        <Label fx:id="userNameLabel" text="User Name" style="-fx-font-size: 16; -fx-font-weight: bold;" />
+                        <HBox spacing="5" alignment="CENTER_LEFT">
+                            <Label text="●" fx:id="statusDot" style="-fx-text-fill: #2ecc71; -fx-font-size: 10;" />
+                            <Label fx:id="userStatusLabel" text="ONLINE" style="-fx-text-fill: #2ecc71; -fx-font-size: 11;" />
+                        </HBox>
+                    </VBox>
+
+                    <!-- Status ComboBox -->
+                    <ComboBox fx:id="statusComboBox" prefWidth="100" />
+                </HBox>
+
+                <!-- Search Section -->
+                <HBox spacing="5" style="-fx-padding: 10; -fx-background-color: #f0f2f5;">
+                    <TextField fx:id="searchField" promptText="🔍 Search users..." HBox.hgrow="ALWAYS"
+                              style="-fx-background-radius: 20; -fx-padding: 8;" />
+                    <Button fx:id="searchButton" text="Search" onAction="#handleSearch"
+                           style="-fx-background-color: #1877f2; -fx-text-fill: white; -fx-background-radius: 20; -fx-padding: 8 16;" />
+                </HBox>
+
+                <!-- Action Buttons -->
+                <HBox spacing="10" style="-fx-padding: 10; -fx-background-color: white; -fx-border-color: #e4e6eb; -fx-border-width: 0 0 1 0;">
+                    <Button text="➕ Create Group" onAction="#handleCreateGroup" HBox.hgrow="ALWAYS"
+                           style="-fx-background-color: #42b72a; -fx-text-fill: white; -fx-background-radius: 5; -fx-font-size: 12;" />
+                    <Button fx:id="logoutButton" text="Logout" onAction="#handleLogout"
+                           style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 5; -fx-font-size: 12;" />
+                </HBox>
+
+                <!-- Tabs for Friends/Groups -->
+                <TabPane fx:id="conversationsTabPane" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS"
+                        style="-fx-background-color: white;">
+
+                    <!-- Friends Tab -->
+                    <Tab text="💬 Friends">
+                        <ListView fx:id="friendListView" style="-fx-background-color: white; -fx-border-width: 0;" />
+                    </Tab>
+
+                    <!-- Groups Tab -->
+                    <Tab text="👥 Groups">
+                        <ListView fx:id="groupListView" style="-fx-background-color: white; -fx-border-width: 0;" />
+                    </Tab>
+                </TabPane>
+            </VBox>
+
+            <!-- RIGHT PANEL: Chat Area -->
+            <StackPane fx:id="chatContainer" style="-fx-background-color: white;">
+
+                <!-- Welcome Screen (shown when no chat selected) -->
+                <VBox fx:id="welcomeScreen" alignment="CENTER" spacing="20" style="-fx-background-color: white;">
+                    <Label text="💬" style="-fx-font-size: 80;" />
+                    <Label text="Select a conversation to start chatting"
+                          style="-fx-font-size: 18; -fx-text-fill: #65676b; -fx-font-weight: bold;" />
+                    <Label text="Choose from your friends or groups on the left"
+                          style="-fx-font-size: 14; -fx-text-fill: #8a8d91;" />
                 </VBox>
-            </Tab>
-        </TabPane>
+
+                <!-- Chat Content Area (dynamically loaded) -->
+                <BorderPane fx:id="chatArea" visible="false" managed="false" />
+            </StackPane>
+        </SplitPane>
     </center>
 </BorderPane>
