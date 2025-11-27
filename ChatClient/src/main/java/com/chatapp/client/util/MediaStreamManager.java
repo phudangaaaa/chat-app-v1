@@ -266,19 +266,39 @@ public class MediaStreamManager {
      * Stop all streaming
      */
     public void stopStreaming() {
+        System.out.println("[MediaStream] Stopping all streams...");
         streaming = false;
 
         try {
+            // Interrupt threads
             if (videoSendThread != null) videoSendThread.interrupt();
             if (audioSendThread != null) audioSendThread.interrupt();
             if (audioReceiveThread != null) audioReceiveThread.interrupt();
+
+            // Wait for threads to finish
+            if (videoSendThread != null && videoSendThread.isAlive()) {
+                System.out.println("[MediaStream] Waiting for video send thread to stop...");
+                videoSendThread.join(2000); // Wait up to 2 seconds
+            }
+
+            if (audioSendThread != null && audioSendThread.isAlive()) {
+                System.out.println("[MediaStream] Waiting for audio send thread to stop...");
+                audioSendThread.join(2000);
+            }
+
+            if (audioReceiveThread != null && audioReceiveThread.isAlive()) {
+                audioReceiveThread.join(1000);
+            }
 
             // Remove handlers
             networkManager.removeNotificationHandler("VIDEO_FRAME");
             networkManager.removeNotificationHandler("AUDIO_CHUNK");
 
+            System.out.println("[MediaStream] All streams stopped successfully");
+
         } catch (Exception e) {
-            System.err.println("Error stopping stream: " + e.getMessage());
+            System.err.println("[MediaStream] Error stopping stream: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 

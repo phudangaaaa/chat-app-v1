@@ -198,9 +198,14 @@ public class CallController {
 
         // Handle when call ends
         networkManager.setNotificationHandler(Protocol.NOTIFY_CALL_ENDED, protocol -> {
+            System.out.println("[CallController] Received NOTIFY_CALL_ENDED");
+
+            // Stop media immediately (on current thread)
+            stopCallDuration();
+            stopMediaStream();
+
+            // Update UI on JavaFX thread
             Platform.runLater(() -> {
-                stopCallDuration();
-                stopMediaStream();
                 updateCallStatus("Call ended");
                 closeWindow();
             });
@@ -294,13 +299,19 @@ public class CallController {
      * Stop media stream
      */
     private void stopMediaStream() {
+        System.out.println("[CallController] Stopping media stream...");
+
+        // IMPORTANT: Stop MediaStreamManager FIRST (stops threads accessing webcam)
+        if (mediaStreamManager != null) {
+            mediaStreamManager.stopStreaming();
+        }
+
+        // THEN stop webcam (safe now that threads are stopped)
         if (webcamManager != null) {
             webcamManager.stopCapture();
         }
 
-        if (mediaStreamManager != null) {
-            mediaStreamManager.stopStreaming();
-        }
+        System.out.println("[CallController] Media stream stopped");
     }
 
     /**
@@ -355,30 +366,40 @@ public class CallController {
 
     @FXML
     private void handleRejectCall() {
+        System.out.println("[CallController] Reject call button pressed");
+
+        // Stop media immediately (don't wait for server response)
+        stopMediaStream();
+        updateCallStatus("Call rejected");
+
+        // Then notify server
         JsonObject data = new JsonObject();
         data.addProperty("callId", callInfo.getCallId());
 
         networkManager.sendRequest(Protocol.ACTION_REJECT_CALL, data, response -> {
-            if (response.isSuccess()) {
-                Platform.runLater(() -> {
-                    stopMediaStream();
-                    updateCallStatus("Call rejected");
-                    closeWindow();
-                });
-            }
+            // Server notified, now close window
+            Platform.runLater(() -> {
+                closeWindow();
+            });
         });
     }
 
     @FXML
     private void handleEndCall() {
+        System.out.println("[CallController] End call button pressed");
+
+        // Stop media immediately (don't wait for server response)
+        stopCallDuration();
+        stopMediaStream();
+        updateCallStatus("Call ended");
+
+        // Then notify server
         JsonObject data = new JsonObject();
         data.addProperty("callId", callInfo.getCallId());
 
         networkManager.sendRequest(Protocol.ACTION_END_CALL, data, response -> {
+            // Server notified, now close window
             Platform.runLater(() -> {
-                stopCallDuration();
-                stopMediaStream();
-                updateCallStatus("Call ended");
                 closeWindow();
             });
         });
