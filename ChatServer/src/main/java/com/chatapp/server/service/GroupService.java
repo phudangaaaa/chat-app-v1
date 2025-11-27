@@ -131,10 +131,16 @@ public class GroupService {
      */
     public List<Group> getUserGroups(int userId) {
         List<Group> groups = new ArrayList<>();
-        String sql = "SELECT g.* FROM chat_groups g " +
+        // Optimized query: fetch groups with member IDs in a single query using GROUP_CONCAT
+        String sql = "SELECT g.*, GROUP_CONCAT(gm2.user_id) as member_ids " +
+                     "FROM chat_groups g " +
                      "JOIN group_members gm ON g.group_id = gm.group_id " +
+                     "LEFT JOIN group_members gm2 ON g.group_id = gm2.group_id " +
                      "WHERE gm.user_id = ? " +
+                     "GROUP BY g.group_id " +
                      "ORDER BY g.created_at DESC";
+
+        logger.info("Getting groups list for user {}", userId);
 
         try (Connection conn = dbManager.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -142,13 +148,39 @@ public class GroupService {
             pstmt.setInt(1, userId);
             ResultSet rs = pstmt.executeQuery();
 
+            int count = 0;
             while (rs.next()) {
-                Group group = extractGroupFromResultSet(rs);
-                group.setMemberIds(getGroupMemberIds(group.getGroupId()));
-                groups.add(group);
+                try {
+                    Group group = extractGroupFromResultSet(rs);
+
+                    // Parse member IDs from GROUP_CONCAT result
+                    String memberIdsStr = rs.getString("member_ids");
+                    List<Integer> memberIds = new ArrayList<>();
+                    if (memberIdsStr != null && !memberIdsStr.isEmpty()) {
+                        String[] ids = memberIdsStr.split(",");
+                        for (String id : ids) {
+                            memberIds.add(Integer.parseInt(id.trim()));
+                        }
+                    }
+                    group.setMemberIds(memberIds);
+
+                    groups.add(group);
+                    count++;
+                    logger.debug("Added group: {} ({}) with {} members", group.getGroupName(), group.getGroupId(), memberIds.size());
+                } catch (Exception e) {
+                    logger.error("Error extracting group data from result set", e);
+                }
             }
+
+            logger.info("Successfully retrieved {} groups for user {}", count, userId);
+
+            if (count == 0) {
+                logger.warn("No groups found for user {}. Check group_members table in database.", userId);
+            }
+
         } catch (SQLException e) {
             logger.error("Error getting groups for user {}", userId, e);
+            logger.error("SQL: {}", sql);
         }
         return groups;
     }

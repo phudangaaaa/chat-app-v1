@@ -381,7 +381,6 @@ public class ClientHandler implements Runnable {
     private void handleSendFile(JsonObject data) {
         if (currentUser == null) return;
 
-        int receiverId = data.get("receiverId").getAsInt();
         String fileName = data.get("fileName").getAsString();
         String fileData = data.get("fileData").getAsString();
         String fileType = data.get("fileType").getAsString();
@@ -390,15 +389,39 @@ public class ClientHandler implements Runnable {
 
         if (filePath != null) {
             long fileSize = FileUtil.getFileSize(filePath);
-            Message message = messageService.sendPrivateMessage(currentUser.getUserId(), receiverId,
-                    MessageType.valueOf(fileType), "File: " + fileName, filePath, fileName, fileSize);
+            Message message = null;
 
-            if (message != null) {
-                JsonObject responseData = new JsonObject();
-                responseData.add("message", gson.toJsonTree(message));
-                sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FILE, true, "File sent", responseData));
+            // Check if it's a group or private message
+            if (data.has("groupId")) {
+                // Send to group
+                int groupId = data.get("groupId").getAsInt();
+                message = messageService.sendGroupMessage(currentUser.getUserId(), groupId,
+                        MessageType.valueOf(fileType), "File: " + fileName, filePath, fileName, fileSize);
 
-                notifyUser(receiverId, Protocol.NOTIFY_NEW_MESSAGE, message);
+                if (message != null) {
+                    JsonObject responseData = new JsonObject();
+                    responseData.add("message", gson.toJsonTree(message));
+                    sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FILE, true, "File sent", responseData));
+
+                    notifyGroupMembers(groupId, Protocol.NOTIFY_NEW_MESSAGE, message);
+                }
+            } else {
+                // Send to private chat
+                int receiverId = data.get("receiverId").getAsInt();
+                message = messageService.sendPrivateMessage(currentUser.getUserId(), receiverId,
+                        MessageType.valueOf(fileType), "File: " + fileName, filePath, fileName, fileSize);
+
+                if (message != null) {
+                    JsonObject responseData = new JsonObject();
+                    responseData.add("message", gson.toJsonTree(message));
+                    sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FILE, true, "File sent", responseData));
+
+                    notifyUser(receiverId, Protocol.NOTIFY_NEW_MESSAGE, message);
+                }
+            }
+
+            if (message == null) {
+                sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FILE, false, "Failed to send file"));
             }
         } else {
             sendResponse(Protocol.createResponse(Protocol.ACTION_SEND_FILE, false, "Failed to save file"));

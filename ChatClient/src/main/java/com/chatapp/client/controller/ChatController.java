@@ -304,6 +304,11 @@ public class ChatController {
 
                 networkManager.sendRequest(Protocol.ACTION_SEND_FILE, data, response -> {
                     if (response.isSuccess()) {
+                        Message message = gson.fromJson(response.getData().get("message"), Message.class);
+                        Platform.runLater(() -> {
+                            messages.add(message);
+                            scrollToBottom();
+                        });
                         showAlert("Success", "File sent successfully!");
                     } else {
                         showAlert("Error", "Failed to send file: " + response.getMessage());
