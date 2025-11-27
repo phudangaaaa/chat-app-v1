@@ -53,32 +53,58 @@ public class MediaStreamManager {
     public void startVideoStream(int otherUserId, ImageView remoteVideoView) {
         streaming = true;
 
+        System.out.println("[MediaStream] Setting up VIDEO_FRAME receiver for user " + otherUserId);
+
         // Setup receiver for incoming video frames
         networkManager.setNotificationHandler("VIDEO_FRAME", protocol -> {
             try {
-                String base64Frame = protocol.getData().get("frame").getAsString();
+                System.out.println("[MediaStream] Received VIDEO_FRAME notification");
+
+                // Server wraps data in "data" field, so unwrap it first
+                JsonObject actualData = protocol.getData().has("data")
+                    ? protocol.getData().get("data").getAsJsonObject()
+                    : protocol.getData();
+
+                if (!actualData.has("frame")) {
+                    System.err.println("[MediaStream] VIDEO_FRAME missing 'frame' field");
+                    return;
+                }
+
+                String base64Frame = actualData.get("frame").getAsString();
                 byte[] imageBytes = Base64.getDecoder().decode(base64Frame);
 
                 ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes);
                 BufferedImage bufferedImage = ImageIO.read(bis);
 
                 if (bufferedImage != null) {
+                    System.out.println("[MediaStream] Decoded video frame: " + bufferedImage.getWidth() + "x" + bufferedImage.getHeight());
                     Image fxImage = convertToFxImage(bufferedImage);
                     Platform.runLater(() -> {
                         if (remoteVideoView != null) {
                             remoteVideoView.setImage(fxImage);
                         }
                     });
+                } else {
+                    System.err.println("[MediaStream] Failed to decode video frame");
                 }
             } catch (Exception e) {
-                System.err.println("Error receiving video frame: " + e.getMessage());
+                System.err.println("[MediaStream] Error receiving video frame: " + e.getMessage());
+                e.printStackTrace();
             }
         });
 
         // Send video frames from webcam
         videoSendThread = new Thread(() -> {
-            System.out.println("Video streaming started...");
+            System.out.println("[MediaStream] Video send thread started for user " + otherUserId);
 
+            // Wait a bit for webcam to be ready
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                return;
+            }
+
+            int frameCount = 0;
             try {
                 while (streaming && !Thread.interrupted()) {
                     // Get frame from webcam
@@ -86,6 +112,8 @@ public class MediaStreamManager {
                         BufferedImage frame = webcamManager.captureFrame();
 
                         if (frame != null) {
+                            frameCount++;
+
                             // Compress to JPEG
                             ByteArrayOutputStream baos = new ByteArrayOutputStream();
                             ImageIO.write(frame, "jpg", baos);
@@ -100,7 +128,15 @@ public class MediaStreamManager {
                             data.addProperty("frame", base64Frame);
 
                             networkManager.sendNotification(Protocol.ACTION_CALL_SIGNAL, data);
+
+                            if (frameCount % 30 == 0) {
+                                System.out.println("[MediaStream] Sent " + frameCount + " video frames to user " + otherUserId);
+                            }
+                        } else {
+                            System.err.println("[MediaStream] Webcam returned null frame");
                         }
+                    } else {
+                        System.err.println("[MediaStream] Webcam not available");
                     }
 
                     // Limit to ~15 FPS to reduce bandwidth
@@ -109,10 +145,11 @@ public class MediaStreamManager {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception e) {
-                System.err.println("Error in video send thread: " + e.getMessage());
+                System.err.println("[MediaStream] Error in video send thread: " + e.getMessage());
+                e.printStackTrace();
             }
 
-            System.out.println("Video streaming stopped");
+            System.out.println("[MediaStream] Video streaming stopped. Total frames sent: " + frameCount);
         });
 
         videoSendThread.setDaemon(true);
@@ -125,14 +162,33 @@ public class MediaStreamManager {
     public void startAudioStream(int otherUserId) {
         streaming = true;
 
+        System.out.println("[MediaStream] Setting up AUDIO_CHUNK receiver for user " + otherUserId);
+
         // Setup receiver for incoming audio
         networkManager.setNotificationHandler("AUDIO_CHUNK", protocol -> {
             try {
-                String base64Audio = protocol.getData().get("audio").getAsString();
+                System.out.println("[MediaStream] Received AUDIO_CHUNK notification");
+
+                // Server wraps data in "data" field, so unwrap it first
+                JsonObject actualData = protocol.getData().has("data")
+                    ? protocol.getData().get("data").getAsJsonObject()
+                    : protocol.getData();
+
+                if (!actualData.has("audio")) {
+                    System.err.println("[MediaStream] AUDIO_CHUNK missing 'audio' field");
+                    return;
+                }
+
+                String base64Audio = actualData.get("audio").getAsString();
                 byte[] audioData = Base64.getDecoder().decode(base64Audio);
 
                 // Play audio
                 DataLine.Info speakerInfo = new DataLine.Info(SourceDataLine.class, AUDIO_FORMAT);
+                if (!AudioSystem.isLineSupported(speakerInfo)) {
+                    System.err.println("[MediaStream] Speaker line not supported");
+                    return;
+                }
+
                 SourceDataLine speaker = (SourceDataLine) AudioSystem.getLine(speakerInfo);
                 speaker.open(AUDIO_FORMAT);
                 speaker.start();
@@ -140,26 +196,40 @@ public class MediaStreamManager {
                 speaker.drain();
                 speaker.close();
 
+                System.out.println("[MediaStream] Played audio chunk: " + audioData.length + " bytes");
+
             } catch (Exception e) {
-                System.err.println("Error receiving audio: " + e.getMessage());
+                System.err.println("[MediaStream] Error receiving audio: " + e.getMessage());
+                e.printStackTrace();
             }
         });
 
         // Send audio from microphone
         audioSendThread = new Thread(() -> {
-            System.out.println("Audio streaming started...");
+            System.out.println("[MediaStream] Audio send thread started for user " + otherUserId);
 
             try {
                 DataLine.Info micInfo = new DataLine.Info(TargetDataLine.class, AUDIO_FORMAT);
+
+                if (!AudioSystem.isLineSupported(micInfo)) {
+                    System.err.println("[MediaStream] Microphone line not supported!");
+                    return;
+                }
+
                 TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(micInfo);
                 microphone.open(AUDIO_FORMAT);
                 microphone.start();
 
+                System.out.println("[MediaStream] Microphone opened and started");
+
                 byte[] buffer = new byte[1024];
+                int chunkCount = 0;
 
                 while (streaming && !Thread.interrupted()) {
                     int bytesRead = microphone.read(buffer, 0, buffer.length);
                     if (bytesRead > 0) {
+                        chunkCount++;
+
                         // Encode and send
                         String base64Audio = Base64.getEncoder().encodeToString(buffer);
 
@@ -170,17 +240,22 @@ public class MediaStreamManager {
                         data.addProperty("audio", base64Audio);
 
                         networkManager.sendNotification(Protocol.ACTION_CALL_SIGNAL, data);
+
+                        if (chunkCount % 50 == 0) {
+                            System.out.println("[MediaStream] Sent " + chunkCount + " audio chunks to user " + otherUserId);
+                        }
                     }
                 }
 
                 microphone.stop();
                 microphone.close();
 
-            } catch (Exception e) {
-                System.err.println("Error in audio send thread: " + e.getMessage());
-            }
+                System.out.println("[MediaStream] Audio streaming stopped. Total chunks sent: " + chunkCount);
 
-            System.out.println("Audio streaming stopped");
+            } catch (Exception e) {
+                System.err.println("[MediaStream] Error in audio send thread: " + e.getMessage());
+                e.printStackTrace();
+            }
         });
 
         audioSendThread.setDaemon(true);

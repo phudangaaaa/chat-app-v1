@@ -571,15 +571,37 @@ public class ClientHandler implements Runnable {
 
     private void handleCallSignal(JsonObject data) {
         // Forward media/signaling data to the other peer
+        if (!data.has("receiverId")) {
+            logger.error("CALL_SIGNAL missing receiverId field");
+            return;
+        }
+
         int receiverId = data.get("receiverId").getAsInt();
 
         // Extract signal type (VIDEO_FRAME, AUDIO_CHUNK, etc.)
         String signalType = data.has("type") ? data.get("type").getAsString() : Protocol.ACTION_CALL_SIGNAL;
 
+        // Check if receiver is online
+        ClientHandler receiver = server.getOnlineUser(receiverId);
+        if (receiver == null) {
+            logger.warn("Cannot forward {} signal to user {} - user offline", signalType, receiverId);
+            return;
+        }
+
         // Forward with appropriate notification type
         notifyUser(receiverId, signalType, data);
 
-        logger.debug("Forwarded {} signal from {} to {}", signalType, currentUser != null ? currentUser.getUserId() : "unknown", receiverId);
+        // Log periodically to avoid spam (every 30th frame/chunk)
+        if (signalType.equals("VIDEO_FRAME") || signalType.equals("AUDIO_CHUNK")) {
+            // Only log occasionally
+            if (Math.random() < 0.03) { // ~3% of messages
+                logger.debug("Forwarding {} from user {} to user {}", signalType,
+                    currentUser != null ? currentUser.getUserId() : "unknown", receiverId);
+            }
+        } else {
+            logger.info("Forwarded {} signal from {} to {}", signalType,
+                currentUser != null ? currentUser.getUserId() : "unknown", receiverId);
+        }
     }
 
     private void notifyUser(int userId, String notificationType, Object data) {
