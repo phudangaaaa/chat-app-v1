@@ -15,10 +15,13 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.scene.control.ScrollPane;
 
 import java.io.File;
 import java.io.IOException;
@@ -111,9 +114,37 @@ public class ChatController {
                     // Message content
                     boolean isMine = message.getSenderId() == SessionManager.getInstance().getCurrentUserId();
 
-                    // Check if it's a file message
-                    if (message.getMessageType() != MessageType.TEXT && message.getFileUrl() != null) {
-                        // Create clickable file link
+                    // Check if it's an image message
+                    if (message.getMessageType() == MessageType.IMAGE && message.getFileUrl() != null) {
+                        // Create image preview container
+                        VBox imageContainer = new VBox(5);
+                        imageContainer.setMaxWidth(300);
+
+                        // Create placeholder label while loading
+                        Label loadingLabel = new Label("📷 Loading image...");
+                        loadingLabel.setStyle("-fx-font-size: 12; -fx-text-fill: gray;");
+                        imageContainer.getChildren().add(loadingLabel);
+
+                        // Load and display image
+                        loadImageAsync(message, imageContainer, isMine);
+
+                        // Add download link below image
+                        Hyperlink downloadLink = new Hyperlink("💾 Download");
+                        downloadLink.setOnAction(e -> handleDownloadFile(message));
+                        downloadLink.setStyle("-fx-font-size: 10;");
+                        imageContainer.getChildren().add(downloadLink);
+
+                        if (isMine) {
+                            imageContainer.setStyle("-fx-background-color: #dcf8c6; -fx-padding: 8; -fx-background-radius: 10;");
+                            vbox.setStyle("-fx-alignment: center-right;");
+                        } else {
+                            imageContainer.setStyle("-fx-background-color: #ffffff; -fx-padding: 8; -fx-background-radius: 10; -fx-border-color: #ddd; -fx-border-radius: 10;");
+                            vbox.setStyle("-fx-alignment: center-left;");
+                        }
+                        vbox.getChildren().add(imageContainer);
+
+                    } else if (message.getMessageType() != MessageType.TEXT && message.getFileUrl() != null) {
+                        // Other file types (not image)
                         Hyperlink fileLink = new Hyperlink(formatMessageContent(message));
                         fileLink.setWrapText(true);
                         fileLink.setMaxWidth(400);
@@ -127,6 +158,7 @@ public class ChatController {
                             vbox.setStyle("-fx-alignment: center-left;");
                         }
                         vbox.getChildren().add(fileLink);
+
                     } else {
                         // Regular text message
                         Label contentLabel = new Label(formatMessageContent(message));
@@ -152,6 +184,107 @@ public class ChatController {
                 }
             }
         });
+    }
+
+    /**
+     * Load image asynchronously and display in chat
+     */
+    private void loadImageAsync(Message message, VBox container, boolean isMine) {
+        // Request image from server
+        JsonObject data = new JsonObject();
+        data.addProperty("filePath", message.getFileUrl());
+
+        networkManager.sendRequest(Protocol.ACTION_RECEIVE_FILE, data, response -> {
+            if (response.isSuccess()) {
+                try {
+                    String base64Data = response.getData().get("fileData").getAsString();
+                    byte[] imageBytes = Base64.getDecoder().decode(base64Data);
+
+                    // Create image from bytes
+                    Platform.runLater(() -> {
+                        try {
+                            // Write temp file to load image (JavaFX Image needs file/stream)
+                            File tempFile = File.createTempFile("chat_image_", ".jpg");
+                            tempFile.deleteOnExit();
+                            Files.write(tempFile.toPath(), imageBytes);
+
+                            // Create and configure ImageView
+                            Image image = new Image(tempFile.toURI().toString());
+                            ImageView imageView = new ImageView(image);
+
+                            // Set thumbnail size (max 250px wide, maintain aspect ratio)
+                            imageView.setFitWidth(250);
+                            imageView.setPreserveRatio(true);
+                            imageView.setSmooth(true);
+
+                            // Add rounded corners
+                            imageView.setStyle("-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);");
+
+                            // Make clickable to view full size
+                            imageView.setOnMouseClicked(e -> showFullSizeImage(image, message.getFileName()));
+                            imageView.setStyle(imageView.getStyle() + "-fx-cursor: hand;");
+
+                            // Remove loading label and add image
+                            container.getChildren().clear();
+                            container.getChildren().add(imageView);
+
+                            // Re-add download link
+                            Hyperlink downloadLink = new Hyperlink("💾 Download");
+                            downloadLink.setOnAction(e -> handleDownloadFile(message));
+                            downloadLink.setStyle("-fx-font-size: 10;");
+                            container.getChildren().add(downloadLink);
+
+                        } catch (Exception e) {
+                            System.err.println("Error displaying image: " + e.getMessage());
+                            Label errorLabel = new Label("❌ Failed to load image");
+                            errorLabel.setStyle("-fx-text-fill: red; -fx-font-size: 11;");
+                            container.getChildren().clear();
+                            container.getChildren().add(errorLabel);
+                        }
+                    });
+
+                } catch (Exception e) {
+                    Platform.runLater(() -> {
+                        Label errorLabel = new Label("❌ Failed to decode image");
+                        errorLabel.setStyle("-fx-text-fill: red; -fx-font-size: 11;");
+                        container.getChildren().clear();
+                        container.getChildren().add(errorLabel);
+                    });
+                }
+            } else {
+                Platform.runLater(() -> {
+                    Label errorLabel = new Label("❌ Failed to load image from server");
+                    errorLabel.setStyle("-fx-text-fill: red; -fx-font-size: 11;");
+                    container.getChildren().clear();
+                    container.getChildren().add(errorLabel);
+                });
+            }
+        });
+    }
+
+    /**
+     * Show image in full size in a new window
+     */
+    private void showFullSizeImage(Image image, String fileName) {
+        Stage imageStage = new Stage();
+        imageStage.setTitle(fileName != null ? fileName : "Image");
+        imageStage.initModality(Modality.NONE);
+
+        ImageView fullImageView = new ImageView(image);
+        fullImageView.setPreserveRatio(true);
+
+        // Fit to screen but don't exceed image original size
+        fullImageView.setFitWidth(Math.min(image.getWidth(), 800));
+        fullImageView.setFitHeight(Math.min(image.getHeight(), 600));
+
+        ScrollPane scrollPane = new ScrollPane(fullImageView);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
+        scrollPane.setStyle("-fx-background-color: #2b2b2b;");
+
+        Scene scene = new Scene(scrollPane);
+        imageStage.setScene(scene);
+        imageStage.show();
     }
 
     private String formatMessageContent(Message message) {
