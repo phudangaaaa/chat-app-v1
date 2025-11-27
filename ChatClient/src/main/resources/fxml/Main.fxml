@@ -37,8 +37,11 @@
 
                     <!-- Refresh Status Button -->
                     <Button fx:id="refreshStatusButton" text="🔄" onAction="#handleRefreshStatus"
-                           style="-fx-background-color: transparent; -fx-font-size: 16; -fx-cursor: hand;"
-                           tooltip="Refresh Status" />
+                           style="-fx-background-color: transparent; -fx-font-size: 16; -fx-cursor: hand;">
+                        <tooltip>
+                            <Tooltip text="Refresh Status" />
+                        </tooltip>
+                    </Button>
                 </HBox>
 
                 <!-- Search Section -->
