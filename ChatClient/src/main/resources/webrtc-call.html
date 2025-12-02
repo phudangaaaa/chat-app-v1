@@ -391,29 +391,64 @@
             }
         }
 
-        // Toggle audio mute
-        function toggleMute() {
+        // Toggle audio mute (can be called with boolean parameter from Java)
+        function toggleMute(mute) {
             if (!localStream) return;
 
             const audioTrack = localStream.getAudioTracks()[0];
             if (audioTrack) {
-                isAudioMuted = !isAudioMuted;
+                if (mute !== undefined) {
+                    // Called from Java with explicit parameter
+                    isAudioMuted = mute;
+                } else {
+                    // Called from button click, toggle state
+                    isAudioMuted = !isAudioMuted;
+                }
                 audioTrack.enabled = !isAudioMuted;
                 muteBtn.textContent = isAudioMuted ? 'Unmute Audio' : 'Mute Audio';
                 muteBtn.style.background = isAudioMuted ? '#dc2626' : '#f59e0b';
+                console.log('Audio muted:', isAudioMuted);
             }
         }
 
-        // Toggle video
-        function toggleVideo() {
+        // Toggle video (can be called with boolean parameter from Java)
+        function toggleVideo(enable) {
             if (!localStream) return;
 
             const videoTrack = localStream.getVideoTracks()[0];
             if (videoTrack) {
-                isVideoEnabled = !isVideoEnabled;
+                if (enable !== undefined) {
+                    // Called from Java with explicit parameter
+                    isVideoEnabled = enable;
+                } else {
+                    // Called from button click, toggle state
+                    isVideoEnabled = !isVideoEnabled;
+                }
                 videoTrack.enabled = isVideoEnabled;
                 videoToggleBtn.textContent = isVideoEnabled ? 'Stop Video' : 'Start Video';
                 videoToggleBtn.style.background = isVideoEnabled ? '#3b82f6' : '#dc2626';
+                console.log('Video enabled:', isVideoEnabled);
+            }
+        }
+
+        // Alias for Java compatibility
+        function toggleCamera(enable) {
+            toggleVideo(enable);
+        }
+
+        // Wait for offer (receiver side initialization)
+        async function waitForOffer() {
+            try {
+                if (!localStream) {
+                    await initializeLocalStream();
+                }
+                updateStatus('Waiting for call...', 'connecting');
+                console.log('Ready to receive offer');
+            } catch (error) {
+                console.error('Error initializing for incoming call:', error);
+                if (window.javaApp) {
+                    window.javaApp.onError('Initialization failed: ' + error.message);
+                }
             }
         }
 
@@ -477,7 +512,11 @@
             receiveIceCandidate: receiveIceCandidate,
             startCall: startCall,
             endCall: endCall,
-            initializeLocalStream: initializeLocalStream
+            initializeLocalStream: initializeLocalStream,
+            waitForOffer: waitForOffer,
+            toggleMute: toggleMute,
+            toggleVideo: toggleVideo,
+            toggleCamera: toggleCamera
         };
     </script>
 </body>

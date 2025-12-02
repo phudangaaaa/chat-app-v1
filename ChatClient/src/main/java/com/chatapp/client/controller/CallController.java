@@ -105,6 +105,11 @@ public class CallController {
             // Enable JavaScript
             webEngine.setJavaScriptEnabled(true);
 
+            // Configure WebView to fill the container
+            webView.setPrefWidth(800);
+            webView.setPrefHeight(600);
+            webView.setVisible(false); // Hidden initially, shown when video call starts
+
             // Load WebRTC page
             String webrtcPage = getClass().getResource("/webrtc-call.html").toExternalForm();
             System.out.println("Loading WebRTC page: " + webrtcPage);
@@ -123,6 +128,23 @@ public class CallController {
             });
 
             webEngine.load(webrtcPage);
+
+            // Add WebView to video container (CRITICAL FIX)
+            Platform.runLater(() -> {
+                // Hide old ImageViews when using WebRTC
+                if (localVideoView != null) {
+                    localVideoView.setVisible(false);
+                    localVideoView.setManaged(false);
+                }
+                if (remoteVideoView != null) {
+                    remoteVideoView.setVisible(false);
+                    remoteVideoView.setManaged(false);
+                }
+
+                // Add WebView to container
+                videoContainer.getChildren().add(0, webView);
+                System.out.println("WebView added to video container");
+            });
 
             // Setup WebRTC signaling notification handlers
             setupWebRTCNotificationHandlers();
@@ -156,10 +178,13 @@ public class CallController {
 
             Platform.runLater(() -> {
                 try {
-                    // Call JavaScript function to receive offer
-                    webEngine.executeScript("window.webrtc.receiveOffer('" + sdp.replace("'", "\\'") + "')");
+                    // Call JavaScript function to receive offer with proper JSON escaping
+                    String escapedSdp = gson.toJson(sdp);
+                    String script = "if(window.webrtc) { window.webrtc.receiveOffer(" + escapedSdp + "); }";
+                    webEngine.executeScript(script);
                 } catch (Exception e) {
                     System.err.println("Error passing offer to JavaScript: " + e.getMessage());
+                    e.printStackTrace();
                 }
             });
         });
@@ -173,10 +198,13 @@ public class CallController {
 
             Platform.runLater(() -> {
                 try {
-                    // Call JavaScript function to receive answer
-                    webEngine.executeScript("window.webrtc.receiveAnswer('" + sdp.replace("'", "\\'") + "')");
+                    // Call JavaScript function to receive answer with proper JSON escaping
+                    String escapedSdp = gson.toJson(sdp);
+                    String script = "if(window.webrtc) { window.webrtc.receiveAnswer(" + escapedSdp + "); }";
+                    webEngine.executeScript(script);
                 } catch (Exception e) {
                     System.err.println("Error passing answer to JavaScript: " + e.getMessage());
+                    e.printStackTrace();
                 }
             });
         });
@@ -190,10 +218,13 @@ public class CallController {
 
             Platform.runLater(() -> {
                 try {
-                    // Call JavaScript function to receive ICE candidate
-                    webEngine.executeScript("window.webrtc.receiveIceCandidate('" + candidate.replace("'", "\\'") + "')");
+                    // Call JavaScript function to receive ICE candidate with proper JSON escaping
+                    String escapedCandidate = gson.toJson(candidate);
+                    String script = "if(window.webrtc) { window.webrtc.receiveIceCandidate(" + escapedCandidate + "); }";
+                    webEngine.executeScript(script);
                 } catch (Exception e) {
                     System.err.println("Error passing ICE candidate to JavaScript: " + e.getMessage());
+                    e.printStackTrace();
                 }
             });
         });
@@ -463,9 +494,6 @@ public class CallController {
     private void startMediaStream() {
         boolean isVideoCall = callInfo.getCallType() == CallInfo.CallType.VIDEO;
 
-        // Initialize media stream manager
-        mediaStreamManager = new MediaStreamManager(callInfo.getCallId(), webcamManager);
-
         if (isVideoCall) {
             // Switch to video UI
             voiceContainer.setVisible(false);
@@ -479,32 +507,84 @@ public class CallController {
             videoCallerNameLabel.setText(otherUser.getFullName());
             videoCallStatusLabel.setText("Connected");
 
-            // Start local webcam display and video streaming
-            if (webcamManager != null && webcamManager.isWebcamAvailable()) {
+            if (useWebRTC && webView != null) {
+                // Use WebRTC P2P for video calls
+                System.out.println("Starting WebRTC P2P video call");
+                webView.setVisible(true);
+
                 try {
-                    webcamManager.startCapture(localVideoView);
-                    System.out.println("Local webcam capture started");
-
-                    // Start video streaming to other user
-                    mediaStreamManager.startVideoStream(otherUser.getUserId(), remoteVideoView);
-                    System.out.println("Video streaming started to user " + otherUser.getUserId());
-
+                    // Start WebRTC call (JavaScript will handle getUserMedia and peer connection)
+                    if (webEngine != null) {
+                        if (isIncoming) {
+                            // Receiver: Wait for offer (already handled in setupWebRTCNotificationHandlers)
+                            webEngine.executeScript("if(window.webrtc) { window.webrtc.waitForOffer(); }");
+                            System.out.println("WebRTC: Waiting for offer from caller");
+                        } else {
+                            // Caller: Create and send offer
+                            webEngine.executeScript("if(window.webrtc) { window.webrtc.startCall(); }");
+                            System.out.println("WebRTC: Starting call as caller");
+                        }
+                    }
                 } catch (Exception e) {
-                    System.err.println("Failed to start video stream: " + e.getMessage());
+                    System.err.println("Failed to start WebRTC call: " + e.getMessage());
                     e.printStackTrace();
                 }
             } else {
-                System.err.println("No webcam available or WebcamManager not initialized!");
-            }
-        }
+                // Fallback to old client-server relay approach
+                System.out.println("Using client-server relay for video call (WebRTC not available)");
 
-        // Start audio streaming for both video and voice calls
-        try {
-            mediaStreamManager.startAudioStream(otherUser.getUserId());
-            System.out.println("Audio streaming started");
-        } catch (Exception e) {
-            System.err.println("Failed to start audio stream: " + e.getMessage());
-            e.printStackTrace();
+                // Initialize media stream manager for fallback
+                mediaStreamManager = new MediaStreamManager(callInfo.getCallId(), webcamManager);
+
+                // Start local webcam display and video streaming
+                if (webcamManager != null && webcamManager.isWebcamAvailable()) {
+                    try {
+                        // Show ImageViews for fallback
+                        if (localVideoView != null) {
+                            localVideoView.setVisible(true);
+                            localVideoView.setManaged(true);
+                        }
+                        if (remoteVideoView != null) {
+                            remoteVideoView.setVisible(true);
+                            remoteVideoView.setManaged(true);
+                        }
+
+                        webcamManager.startCapture(localVideoView);
+                        System.out.println("Local webcam capture started");
+
+                        // Start video streaming to other user
+                        mediaStreamManager.startVideoStream(otherUser.getUserId(), remoteVideoView);
+                        System.out.println("Video streaming started to user " + otherUser.getUserId());
+
+                    } catch (Exception e) {
+                        System.err.println("Failed to start video stream: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                } else {
+                    System.err.println("No webcam available or WebcamManager not initialized!");
+                }
+
+                // Start audio streaming
+                try {
+                    mediaStreamManager.startAudioStream(otherUser.getUserId());
+                    System.out.println("Audio streaming started");
+                } catch (Exception e) {
+                    System.err.println("Failed to start audio stream: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        } else {
+            // Voice call - always use old approach (no WebRTC for voice-only)
+            System.out.println("Starting voice call (audio only)");
+            mediaStreamManager = new MediaStreamManager(callInfo.getCallId(), webcamManager);
+
+            try {
+                mediaStreamManager.startAudioStream(otherUser.getUserId());
+                System.out.println("Audio streaming started");
+            } catch (Exception e) {
+                System.err.println("Failed to start audio stream: " + e.getMessage());
+                e.printStackTrace();
+            }
         }
     }
 
@@ -514,9 +594,21 @@ public class CallController {
     private void stopMediaStream() {
         System.out.println("[CallController] Stopping media stream...");
 
+        // Stop WebRTC connection if active
+        if (useWebRTC && webView != null && webEngine != null) {
+            try {
+                webEngine.executeScript("if(window.webrtc) { window.webrtc.endCall(); }");
+                webView.setVisible(false);
+                System.out.println("[CallController] WebRTC connection closed");
+            } catch (Exception e) {
+                System.err.println("Error stopping WebRTC: " + e.getMessage());
+            }
+        }
+
         // IMPORTANT: Stop MediaStreamManager FIRST (stops threads accessing webcam)
         if (mediaStreamManager != null) {
             mediaStreamManager.stopStreaming();
+            mediaStreamManager = null;
         }
 
         // THEN stop webcam (safe now that threads are stopped)
@@ -545,11 +637,36 @@ public class CallController {
         if (isMuted) {
             muteButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
             muteLabel.setText("Unmute");
-            // TODO: Actually mute microphone
+
+            // Mute microphone
+            if (useWebRTC && webEngine != null) {
+                try {
+                    webEngine.executeScript("if(window.webrtc && window.webrtc.toggleMute) { window.webrtc.toggleMute(true); }");
+                    System.out.println("Microphone muted (WebRTC)");
+                } catch (Exception e) {
+                    System.err.println("Error muting microphone: " + e.getMessage());
+                }
+            } else {
+                // Fallback: mute not implemented for client-server relay
+                // TODO: Implement mute for MediaStreamManager if needed
+                System.out.println("Mute not available in fallback mode");
+            }
         } else {
             muteButton.setStyle("-fx-background-color: rgba(255,255,255,0.3); -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
             muteLabel.setText("Mute");
-            // TODO: Unmute microphone
+
+            // Unmute microphone
+            if (useWebRTC && webEngine != null) {
+                try {
+                    webEngine.executeScript("if(window.webrtc && window.webrtc.toggleMute) { window.webrtc.toggleMute(false); }");
+                    System.out.println("Microphone unmuted (WebRTC)");
+                } catch (Exception e) {
+                    System.err.println("Error unmuting microphone: " + e.getMessage());
+                }
+            } else {
+                // Fallback: unmute not implemented for client-server relay
+                System.out.println("Unmute not available in fallback mode");
+            }
         }
     }
 
@@ -563,16 +680,42 @@ public class CallController {
         if (isCameraOn) {
             cameraButton.setStyle("-fx-background-color: rgba(255,255,255,0.3); -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
             cameraLabel.setText("Camera");
-            localVideoView.setVisible(true);
-            if (webcamManager != null) {
-                webcamManager.startCapture(localVideoView);
+
+            // Turn camera on
+            if (useWebRTC && webEngine != null) {
+                try {
+                    webEngine.executeScript("if(window.webrtc && window.webrtc.toggleCamera) { window.webrtc.toggleCamera(true); }");
+                    System.out.println("Camera enabled (WebRTC)");
+                } catch (Exception e) {
+                    System.err.println("Error enabling camera: " + e.getMessage());
+                }
+            } else {
+                // Fallback
+                localVideoView.setVisible(true);
+                if (webcamManager != null) {
+                    webcamManager.startCapture(localVideoView);
+                    System.out.println("Camera enabled (fallback)");
+                }
             }
         } else {
             cameraButton.setStyle("-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-size: 24; -fx-background-radius: 50; -fx-cursor: hand;");
             cameraLabel.setText("Camera Off");
-            localVideoView.setVisible(false);
-            if (webcamManager != null) {
-                webcamManager.stopCapture();
+
+            // Turn camera off
+            if (useWebRTC && webEngine != null) {
+                try {
+                    webEngine.executeScript("if(window.webrtc && window.webrtc.toggleCamera) { window.webrtc.toggleCamera(false); }");
+                    System.out.println("Camera disabled (WebRTC)");
+                } catch (Exception e) {
+                    System.err.println("Error disabling camera: " + e.getMessage());
+                }
+            } else {
+                // Fallback
+                localVideoView.setVisible(false);
+                if (webcamManager != null) {
+                    webcamManager.stopCapture();
+                    System.out.println("Camera disabled (fallback)");
+                }
             }
         }
     }
